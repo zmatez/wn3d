@@ -1,0 +1,58 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.gui {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.gui .debug-info {
+  color: white;
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 5px;
+  width: 30%;
+  display: flex;
+  flex-flow: column;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-bottom-right-radius: 5px;
+}
+.gui .stats {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 5px;
+  display: flex;
+  flex-flow: row;
+  gap: 10px;
+}
+.gui .stats .stat {
+  position: relative !important;
+}
+.gui .pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.gui .pointer img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  width: 25px;
+  height: 25px;
+  mix-blend-mode: difference;
+}
+
+/*# sourceMappingURL=style.css.map */

@@ -1,0 +1,60 @@
+html, body{
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.gui{
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+
+    .debug-info{
+        color: white;
+        font-size: 12px;
+        font-family: Consolas,monospace;
+        position: absolute;
+        top: 0;
+        left: 0;
+        padding: 5px;
+        width: 30%;
+        display: flex;
+        flex-flow: column;
+        background-color: transparentize(black, 0.4);
+        border-bottom-right-radius: 5px;
+    }
+    .stats{
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        padding: 5px;
+        display: flex;
+        flex-flow: row;
+        gap: 10px;
+
+        .stat{
+            position: relative !important;
+        }
+    }
+
+    .pointer{
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+
+        img{
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            width: 25px;
+            height: 25px;
+            mix-blend-mode: difference;
+        }
+    }
+}
