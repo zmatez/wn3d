@@ -21,13 +21,13 @@ export class App {
     public player: Player;
     public working: boolean = true;
     public gui: GUI;
-    public readonly renderDistance: number = 2;
+    public readonly renderDistance: number = 6;
     public fpsStats: Stats;
     public ticksPerSecond: number = 5;
     public lastTick: Date;
     private clock = new THREE.Clock();
     private clockDelta = 0;
-    private desiredFPS = 1 / 60;
+    private desiredFPS = 1 / 144;
 
 
     public skyBox: Skybox;
@@ -46,7 +46,7 @@ export class App {
         hemisphereLight.position.set(0, 512, 0);
         this.scene.add(hemisphereLight);
 
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
 
         let pixelRatio = window.devicePixelRatio
         let AA = true
@@ -78,9 +78,6 @@ export class App {
 
         this.gui = new GUI();
 
-        this.skyBox = new Skybox(this.renderer,this.scene, this.renderDistance, Chunk.CHUNK_SIZE);
-        this.skyBox.setSkyPos(this.sunPos);
-
         this.start()
     }
 
@@ -98,10 +95,14 @@ export class App {
         this.fpsStats = createStat(0);
 
 
-        Blocks.Block.setup(Chunk.CHUNK_SIZE, Chunk.CHUNK_DEPTH, this.renderDistance);
+        //Blocks.Block.setup(Chunk.CHUNK_SIZE, Chunk.CHUNK_DEPTH, this.renderDistance);
 
-        Blocks.Block.BLOCKS.forEach(block => block.prepare(this.scene));
+        //Blocks.Block.BLOCKS.forEach(block => block.prepare(this.scene));
+
         this.level = new Level(this.scene);
+
+        this.skyBox = new Skybox(this.renderer,this.scene, this.level,this.renderDistance, Chunk.CHUNK_SIZE);
+        this.skyBox.setSkyPos(this.sunPos);
 
         this.player = new Player(this.scene, this.level, this.camera, this);
         this.gameLoop();
@@ -146,10 +147,13 @@ export class App {
 
         let aabb = this.player.aabb;
 
+        let posBelow = this.level.getBlock(this.player.onBlockPos);
+
         this.gui.setDebugText(`
         <span>Position: <span style="color: #fc8878">x${this.player.onPos.x.toFixed(2)} y${this.player.onPos.y.toFixed(2)} z${this.player.onPos.z.toFixed(2)}</span></span>
         <span>AABB: <span style="color: #fc8878">x${aabb.min.x.toFixed(2)} y${aabb.min.y.toFixed(2)} z${aabb.min.z.toFixed(2)} => x${aabb.max.x.toFixed(2)} y${aabb.max.y.toFixed(2)} z${aabb.max.z.toFixed(2)}</span></span>
-        <span>Block below: <span style="color: #8ff57a">${this.level.getBlock(this.player.onBlockPos).block.registryName}</span></span>
+        <span>Block below: <span style="color: #8ff57a">${posBelow.block.registryName}</span></span>
+        <span>Relative pos: <span style="color: #8ff57a">x${posBelow.relativePos.x} y${posBelow.relativePos.y} z${posBelow.relativePos.z} </span></span>
         <span>Below pos: <span style="color: #8ff57a">x${this.player.onBlockPos.x} y${this.player.onBlockPos.y} z${this.player.onBlockPos.z}</span></span>
         <span>Rotation: <span style="color: #8ff57a">x${this.player.rotation.x} y${this.player.rotation.y}</span></span>
         <span>Direction: <span style="color: #8ff57a">${this.player.lookDir.name}</span></span>
@@ -157,9 +161,15 @@ export class App {
         <span>On Ground: <span style="color: #769dff">${this.player.onGround}</span></span>
         <span>Flying: <span style="color: #769dff">${this.player.flying}</span></span>
         <span>yForce: <span style="color: #dd76ff">${this.player.yForce}</span></span>
-        <span>Mesh data: <span style="color: #ffe845">${this.player.look == null ? "?" : (this.player.look.block.block == Blocks.AIR ? "AIR" : this.player.look.block.stringFaces())}</span></span>
         <span>Light Intensity: <span style="color: #ffae45">${this.skyBox.light.intensity}</span></span>
         <span>Sun Deg: <span style="color: #ffae45">${this.skyBox.config.elevation}</span></span>
+        <span>Render frame: <span style="color: #99ff00">${this.renderer.info.render.frame}</span></span>
+        <span>Render lines: <span style="color: #99ff00">${this.renderer.info.render.lines}</span></span>
+        <span>Render calls: <span style="color: #99ff00">${this.renderer.info.render.calls}</span></span>
+        <span>Render points: <span style="color: #99ff00">${this.renderer.info.render.points}</span></span>
+        <span>Render triangle: <span style="color: #99ff00">${this.renderer.info.render.triangles}</span></span>
+        <span>Textures: <span style="color: #99ff00">${this.renderer.info.memory.textures}</span></span>
+        <span>Geometries: <span style="color: #99ff00">${this.renderer.info.memory.geometries}</span></span>
         `);
 
         this.player.tick();

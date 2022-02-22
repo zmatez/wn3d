@@ -12,11 +12,13 @@ import {Vec} from "../math/Vec";
 import {Textures} from "../block/Textures";
 import {Sky} from "three/examples/jsm/objects/Sky";
 import {MathUtilities} from "../math/MathUtilities";
+import {Levels} from "../world/Levels";
 
 export namespace Environment {
     import Vec3 = Vec.Vec3;
     import MaterialHelper = Textures.MaterialHelper;
     import ShaderHelper = Textures.ShaderHelper;
+    import Level = Levels.Level;
 
     export class SkyBox {
         private uniforms = {
@@ -43,6 +45,7 @@ export namespace Environment {
         }
 
         private readonly mesh: Mesh;
+        private readonly level: Level;
         private sun: Vector3 = new Vector3(0,1,0);
         private readonly renderer: WebGLRenderer;
         private scalar: number = 4500;
@@ -54,7 +57,8 @@ export namespace Environment {
         private fullBrightMax: number = 285;
         private maxIntensity: number = 3;
 
-        constructor(renderer: WebGLRenderer, scene: Scene, renderDistance: number, chunkSize: number) {
+        constructor(renderer: WebGLRenderer, scene: Scene, level: Level, renderDistance: number, chunkSize: number) {
+            this.level = level;
             this.scene = scene;
             this.radius = renderDistance * chunkSize * 3;
             this.renderer = renderer;
@@ -154,7 +158,7 @@ export namespace Environment {
             const phi = MathUtils.degToRad(this.config.elevation);
             const theta = MathUtils.degToRad(this.config.azimuth);
             this.light.position.setFromSphericalCoords(this.radius,phi,theta);
-            this.light.position.add(new Vector3(vec.x,0,vec.z));
+            this.light.position.add(new Vector3(vec.x,this.level.seaLevel,vec.z));
             this.light.target.position.x = vec.x;
             this.light.target.position.z = vec.z;
             this.light.target.updateMatrixWorld();

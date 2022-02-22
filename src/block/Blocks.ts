@@ -13,7 +13,7 @@ export namespace Blocks {
 
     export class Block {
         static readonly BLOCK_SIZE: number = 1;
-        private static readonly CUBE_GEOMETRY = new THREE.PlaneBufferGeometry(Block.BLOCK_SIZE, Block.BLOCK_SIZE);
+        public static readonly CUBE_GEOMETRY = new THREE.PlaneBufferGeometry(Block.BLOCK_SIZE, Block.BLOCK_SIZE);
         public static readonly BLOCKS: Block[] = [];
         protected static readonly TEXTURES: string = "assets/textures/";
         public static readonly FREE_MESH_INDEXES: number[] = [];
@@ -21,8 +21,14 @@ export namespace Blocks {
         public static MESH_COUNT: number;
         protected static NULL_MATRIX: THREE.Matrix4 = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
+        static {
+            Block.CUBE_GEOMETRY.computeBoundingBox();
+            Block.CUBE_GEOMETRY.computeVertexNormals();
+            Block.CUBE_GEOMETRY.computeTangents();
+        }
+
         public static setup(chunkSize: number, chunkDepth: number, renderDistance: number) {
-            this.MESH_COUNT = (chunkSize * chunkSize) * chunkDepth * (renderDistance * renderDistance);
+            this.MESH_COUNT = (chunkSize * chunkSize) * (renderDistance * renderDistance) * 6 * chunkDepth;
         }
 
         protected static getNextIndex(): number {
@@ -91,21 +97,21 @@ export namespace Blocks {
                     mesh.setMatrixAt(index, Block.NULL_MATRIX);
                 } else {
                     let matrix = new THREE.Matrix4();
-                    if(direction == Direction.UP) {
+                    if (direction == Direction.UP) {
                         matrix.makeRotationX(Math.PI / 2)
                         matrix.setPosition(pos.x, pos.y + 0.5, pos.z);
-                    }else if(direction == Direction.DOWN){
+                    } else if (direction == Direction.DOWN) {
                         matrix.makeRotationX(-Math.PI + Math.PI / 2)
                         matrix.setPosition(pos.x, pos.y - 0.5, pos.z);
-                    }else if(direction == Direction.NORTH){
+                    } else if (direction == Direction.NORTH) {
                         matrix.setPosition(pos.x, pos.y, pos.z - 0.5);
-                    }else if(direction == Direction.SOUTH){
+                    } else if (direction == Direction.SOUTH) {
                         matrix.makeRotationY(-Math.PI)
                         matrix.setPosition(pos.x, pos.y, pos.z + 0.5);
-                    }else if(direction == Direction.EAST){
+                    } else if (direction == Direction.EAST) {
                         matrix.makeRotationY(-Math.PI + (Math.PI / 2))
                         matrix.setPosition(pos.x + 0.5, pos.y, pos.z);
-                    }else if(direction == Direction.WEST){
+                    } else if (direction == Direction.WEST) {
                         matrix.makeRotationY(Math.PI / 2)
                         matrix.setPosition(pos.x - 0.5, pos.y, pos.z);
                     }
@@ -168,17 +174,30 @@ export namespace Blocks {
         public readonly block: Block;
         public readonly pos: BlockPos;
         public readonly level: Level;
+        public readonly chunk: Levels.Chunk;
+        public readonly relativePos: BlockPos;
+        public readonly index: number;
 
         protected objects: THREE.Object3D[] = [];
-        public mesh: THREE.Mesh;
+        public mesh: THREE.InstancedMesh;
         protected faces: Map<Direction, boolean> = new Map<Directions.Direction, boolean>();
 
         public meshIndex: number;
 
-        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level) {
+        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level, chunk: Levels.Chunk, mesh: THREE.InstancedMesh, index: number) {
             this.block = block;
             this.pos = pos;
             this.level = level;
+            this.chunk = chunk;
+            this.mesh = mesh;
+            this.index = index;
+
+            if (chunk != null) {
+                let relX = (pos.x - (chunk.chunkPos.x * Levels.Chunk.CHUNK_SIZE))
+                let relZ = (pos.z - (chunk.chunkPos.z * Levels.Chunk.CHUNK_SIZE))
+
+                this.relativePos = new BlockPos(relX, pos.y, relZ);
+            }
 
             Direction.values.forEach((dir) => this.faces.set(dir, true));
         }
@@ -193,6 +212,7 @@ export namespace Blocks {
             if (this.meshIndex == null) {
                 this.meshIndex = this.block.load(scene, this, this.level, this.pos, this.faces);
             }
+
         }
 
         public unload(scene: THREE.Scene) {
@@ -207,9 +227,11 @@ export namespace Blocks {
                 this.faces.set(neighbour.direction, neighbour.state.block == Blocks.AIR);
             });
 
-            if(this.pos.y == 0){
-                this.faces.set(Direction.DOWN,false);
+            if (this.pos.y == 0) {
+                this.faces.set(Direction.DOWN, false);
             }
+
+            this.updateMesh();
         }
 
         public remove(scene: THREE.Scene) {
@@ -230,6 +252,44 @@ export namespace Blocks {
             }
 
             this.block.update(this, this.level, this.pos, updateState, updatePos, updateDirection);
+            this.updateMesh();
+        }
+
+        private updateMesh() {
+            let pos = this.relativePos;
+
+            for (let i = 0; i < Direction.values.length; i++) {
+                let dir = Direction.values[i];
+
+                if (this.faces.get(dir)) {
+                    let matrix = new THREE.Matrix4();
+                    if (dir == Direction.UP) {
+                        matrix.makeRotationX(Math.PI / 2)
+                        matrix.setPosition(pos.x, pos.y + 0.5, pos.z);
+                    } else if (dir == Direction.DOWN) {
+                        matrix.makeRotationX(-Math.PI + Math.PI / 2)
+                        matrix.setPosition(pos.x, pos.y - 0.5, pos.z);
+                    } else if (dir == Direction.NORTH) {
+                        matrix.setPosition(pos.x, pos.y, pos.z - 0.5);
+                    } else if (dir == Direction.SOUTH) {
+                        matrix.makeRotationY(-Math.PI)
+                        matrix.setPosition(pos.x, pos.y, pos.z + 0.5);
+                    } else if (dir == Direction.EAST) {
+                        matrix.makeRotationY(-Math.PI + (Math.PI / 2))
+                        matrix.setPosition(pos.x + 0.5, pos.y, pos.z);
+                    } else if (dir == Direction.WEST) {
+                        matrix.makeRotationY(Math.PI / 2)
+                        matrix.setPosition(pos.x - 0.5, pos.y, pos.z);
+                    }
+
+                    this.mesh.setMatrixAt(this.index + i, matrix);
+                } else {
+                    this.mesh.setMatrixAt(this.index + i, Levels.Chunk.EMPTY_MATRIX);
+                }
+
+            }
+
+            this.mesh.instanceMatrix.needsUpdate = true;
         }
     }
 
