@@ -21,12 +21,6 @@ export namespace Blocks {
         public static MESH_COUNT: number;
         protected static NULL_MATRIX: THREE.Matrix4 = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-        static {
-            Block.CUBE_GEOMETRY.computeBoundingBox();
-            Block.CUBE_GEOMETRY.computeVertexNormals();
-            Block.CUBE_GEOMETRY.computeTangents();
-        }
-
         public static setup(chunkSize: number, chunkDepth: number, renderDistance: number) {
             this.MESH_COUNT = (chunkSize * chunkSize) * (renderDistance * renderDistance) * 6 * chunkDepth;
         }
@@ -179,27 +173,28 @@ export namespace Blocks {
         public readonly index: number;
 
         protected objects: THREE.Object3D[] = [];
-        public mesh: THREE.InstancedMesh;
-        protected faces: Map<Direction, boolean> = new Map<Directions.Direction, boolean>();
+        public render: Levels.ChunkRenderer;
+        public faces: Map<Direction, boolean> = new Map<Directions.Direction, boolean>();
+        public indexes: Map<Direction, number> = new Map<Directions.Direction, number>();
 
-        public meshIndex: number;
-
-        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level, chunk: Levels.Chunk, mesh: THREE.InstancedMesh, index: number) {
+        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level, chunk: Levels.Chunk, mesh: Levels.ChunkRenderer) {
             this.block = block;
             this.pos = pos;
             this.level = level;
             this.chunk = chunk;
-            this.mesh = mesh;
-            this.index = index;
+            this.render = mesh;
 
             if (chunk != null) {
                 let relX = (pos.x - (chunk.chunkPos.x * Levels.Chunk.CHUNK_SIZE))
                 let relZ = (pos.z - (chunk.chunkPos.z * Levels.Chunk.CHUNK_SIZE))
 
                 this.relativePos = new BlockPos(relX, pos.y, relZ);
+
+                this.index = ((relZ * Levels.Chunk.CHUNK_SIZE * Levels.Chunk.CHUNK_DEPTH) + (pos.y * Levels.Chunk.CHUNK_SIZE) + relX) * 6;
             }
 
             Direction.values.forEach((dir) => this.faces.set(dir, true));
+            Direction.values.forEach((dir) => this.indexes.set(dir, -1));
         }
 
         public stringFaces(): string {
@@ -209,17 +204,9 @@ export namespace Blocks {
         }
 
         public load(scene: THREE.Scene) {
-            if (this.meshIndex == null) {
-                this.meshIndex = this.block.load(scene, this, this.level, this.pos, this.faces);
-            }
-
         }
 
         public unload(scene: THREE.Scene) {
-            if (this.meshIndex != null) {
-                this.block.unload(scene, this, this.level, this.pos, this.meshIndex);
-                this.meshIndex = null;
-            }
         }
 
         public onPlace(neighbours: { direction: Direction, state: BlockState }[]) {
@@ -230,6 +217,12 @@ export namespace Blocks {
             if (this.pos.y == 0) {
                 this.faces.set(Direction.DOWN, false);
             }
+
+            this.faces.forEach((face) => {
+                if(face) {
+                    this.render.planes++;
+                }
+            })
 
             this.updateMesh();
         }
@@ -249,6 +242,11 @@ export namespace Blocks {
             let oldValue = this.faces.get(updateDirection);
             if (needsFace != oldValue) {
                 this.faces.set(updateDirection, needsFace);
+                if(needsFace){
+                    this.render.planes++;
+                } else{
+                    this.render.planes--;
+                }
             }
 
             this.block.update(this, this.level, this.pos, updateState, updatePos, updateDirection);
@@ -282,14 +280,14 @@ export namespace Blocks {
                         matrix.setPosition(pos.x - 0.5, pos.y, pos.z);
                     }
 
-                    this.mesh.setMatrixAt(this.index + i, matrix);
-                } else {
-                    this.mesh.setMatrixAt(this.index + i, Levels.Chunk.EMPTY_MATRIX);
+                    this.render.setMatrixAt(this.index + i, matrix);
+                }else{
+                    this.render.removeMatrixAt(this.index + i);
                 }
 
             }
 
-            this.mesh.instanceMatrix.needsUpdate = true;
+            this.render.updateMesh();
         }
     }
 

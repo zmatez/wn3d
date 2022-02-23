@@ -21,7 +21,7 @@ export class App {
     public player: Player;
     public working: boolean = true;
     public gui: GUI;
-    public readonly renderDistance: number = 6;
+    public readonly renderDistance: number = 10;
     public fpsStats: Stats;
     public ticksPerSecond: number = 5;
     public lastTick: Date;

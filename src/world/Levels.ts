@@ -15,22 +15,18 @@ export namespace Levels {
 
     export class Chunk {
         public static readonly CHUNK_SIZE: number = 16;
-        public static readonly CHUNK_DEPTH: number = 32;
+        public static readonly CHUNK_DEPTH: number = 64;
         static readonly EMPTY_MATRIX: THREE.Matrix4 = new THREE.Matrix4().scale(new THREE.Vector3(0,0,0));
         public readonly blocks: Map<string, BlockState> = new Map<string, Blocks.BlockState>();
         private readonly level: Level;
         public readonly chunkPos: ChunkPos;
         public loaded = false;
-        public mesh: THREE.InstancedMesh;
-        public lastIndex = 0;
+        public renderer: ChunkRenderer;
 
         constructor(level: Level, chunkPos: Vec.ChunkPos) {
             this.level = level;
             this.chunkPos = chunkPos;
-
-            this.mesh = new THREE.InstancedMesh(Blocks.Block.CUBE_GEOMETRY, Textures.material, Chunk.CHUNK_SIZE * Chunk.CHUNK_SIZE * Chunk.CHUNK_DEPTH * 6); //6 faces
-            this.mesh.position.x = chunkPos.x * Chunk.CHUNK_SIZE;
-            this.mesh.position.z = chunkPos.z * Chunk.CHUNK_SIZE;
+            this.renderer = new ChunkRenderer(this, level.scene);
         }
 
         public setBlock(pos: BlockPos, block: Block): void {
@@ -43,22 +39,35 @@ export namespace Levels {
             let relZ = (pos.z - (this.chunkPos.z * Chunk.CHUNK_SIZE))
 
             // 3d -> 1d ===> (z * xMax * yMax) + (y * xMax) + x
-            let index = ((relZ * Chunk.CHUNK_SIZE * Chunk.CHUNK_DEPTH) + (pos.y * Chunk.CHUNK_SIZE) + relX) * 6;
 
             if (block == Blocks.AIR) {
+                const oldBLock = this.blocks.get(serial);
                 this.blocks.delete(serial);
-                let state = new Blocks.BlockState(Blocks.AIR, pos, this.level, this, this.mesh, index);
+
+                oldBLock.faces.forEach(face => {
+                    if(face) {
+                        this.renderer.planes--;
+                    }
+                })
+
+                //remove old faces
+                for (let i = 0; i < Direction.values.length; i++) {
+                    let dir = Direction.values[i];
+
+                    if (oldBLock.faces.get(dir)){
+                        this.renderer.removeMatrixAt(oldBLock.index + i);
+                    }
+                }
+
+                let state = new Blocks.BlockState(Blocks.AIR, pos, this.level, this, this.renderer);
                 this.level.getNeighbour(pos).forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
                         neighbour.state.update(state, pos, neighbour.direction.opposite)
                     }
                 });
 
-                for(let i = 0; i < 6; i++){
-                    this.mesh.setMatrixAt(index + i, Chunk.EMPTY_MATRIX);
-                }
             } else {
-                let state = new Blocks.BlockState(block, pos, this.level, this, this.mesh, index);
+                let state = new Blocks.BlockState(block, pos, this.level, this, this.renderer);
                 this.blocks.set(serial, state);
                 let neighbours = this.level.getNeighbour(pos);
                 state.onPlace(neighbours);
@@ -69,12 +78,18 @@ export namespace Levels {
                     }
                 })
             }
+
+            this.renderer.recomputeMesh();
+        }
+
+        public updateMesh(){
+
         }
 
         public getBlock(pos: BlockPos): BlockState {
             let block = this.blocks.get(pos.serialize());
             if (!block) {
-                return new Blocks.BlockState(Blocks.AIR, pos, this.level, this,null,-1);
+                return new Blocks.BlockState(Blocks.AIR, pos, this.level, this,null);
             }
 
             return block;
@@ -115,7 +130,7 @@ export namespace Levels {
             }
             console.log("Loading chunk " + this.chunkPos.serialize())
             //this.blocks.forEach((block) => block.load(this.level.scene));
-            this.level.scene.add(this.mesh);
+            this.renderer.add();
             this.loaded = true;
             this.level.loadedChunks.set(this.chunkPos.serialize(), this);
         }
@@ -126,9 +141,94 @@ export namespace Levels {
             }
             console.log("Unloading chunk " + this.chunkPos.serialize())
             //this.blocks.forEach((block) => block.unload(this.level.scene));
-            this.mesh.removeFromParent();
+            this.renderer.remove()
             this.loaded = false;
             this.level.loadedChunks.delete(this.chunkPos.serialize());
+        }
+    }
+
+    export class ChunkRenderer {
+        public scene: THREE.Scene;
+        public mesh: THREE.InstancedMesh;
+        public planes: number = 0;
+        public renderedPlanes: number = 0;
+        public chunk: Chunk;
+        public matrices: THREE.Matrix4[] = []
+
+        constructor(chunk: Levels.Chunk, scene: THREE.Scene) {
+            this.chunk = chunk;
+            this.scene = scene;
+        }
+
+        computeMesh(){
+            this.mesh = new THREE.InstancedMesh(Blocks.Block.CUBE_GEOMETRY, Textures.material, this.planes);
+            this.mesh.position.x = this.chunk.chunkPos.x * Chunk.CHUNK_SIZE;
+            this.mesh.position.z = this.chunk.chunkPos.z * Chunk.CHUNK_SIZE;
+            this.renderedPlanes = this.planes;
+        }
+
+        recomputeMesh(){
+            if(this.mesh) {
+                if (this.planes != this.renderedPlanes) {
+                    this.mesh.removeFromParent();
+                    this.computeMesh();
+                    for (let i = 0, j = 0; i < this.matrices.length; i++) {
+                        let matrix = this.matrices[i];
+                        if(matrix) {
+                            this.mesh.setMatrixAt(j, matrix);
+                            j++
+                        }
+                    }
+                }
+            }
+        }
+
+        add(){
+            if(!this.mesh){
+                this.computeMesh();
+
+                for (let i = 0, j = 0; i < this.matrices.length; i++) {
+                    let matrix = this.matrices[i];
+                    if(matrix) {
+                        this.mesh.setMatrixAt(j, matrix);
+                        j++
+                    }
+                }
+            } else{
+                this.recomputeMesh()
+            }
+
+            console.log("Adding mesh with planes: " + this.renderedPlanes + " and matrices: " + this.matrices.length)
+
+            this.scene.add(this.mesh);
+            this.updateMesh();
+        }
+
+        remove(){
+            this.mesh.removeFromParent();
+        }
+
+        setMatrixAt(index: number, matrix: THREE.Matrix4) {
+            this.matrices[index] = matrix;
+            if(this.mesh){
+                this.mesh.setMatrixAt(index,matrix);
+            }
+        }
+
+        setMatrix(matrix: THREE.Matrix4): number{
+            let index = this.matrices.length;
+            this.setMatrixAt(index,matrix);
+            return index;
+        }
+
+        removeMatrixAt(index: number) {
+            this.matrices[index] = null;
+        }
+
+        updateMesh(){
+            if(this.mesh) {
+                this.mesh.instanceMatrix.needsUpdate = true;
+            }
         }
     }
 
@@ -174,7 +274,7 @@ export namespace Levels {
                 return this.chunks.get(long).getBlock(pos);
             }
 
-            return new Blocks.BlockState(Blocks.AIR, pos, this, null,null,-1);
+            return new Blocks.BlockState(Blocks.AIR, pos, this, null,null);
         }
 
         public forEachBlockNear(pos: BlockPos, xzRange: number, yRange: number, callback: (state: BlockState, pos: BlockPos) => boolean) {
