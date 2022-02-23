@@ -172,17 +172,15 @@ export namespace Blocks {
         public readonly relativePos: BlockPos;
         public readonly index: number;
 
-        protected objects: THREE.Object3D[] = [];
         public render: Levels.ChunkRenderer;
         public faces: Map<Direction, boolean> = new Map<Directions.Direction, boolean>();
-        public indexes: Map<Direction, number> = new Map<Directions.Direction, number>();
 
-        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level, chunk: Levels.Chunk, mesh: Levels.ChunkRenderer) {
+        constructor(block: Blocks.Block, pos: Vec.BlockPos, level: Level, chunk: Levels.Chunk, renderer: Levels.ChunkRenderer) {
             this.block = block;
             this.pos = pos;
             this.level = level;
             this.chunk = chunk;
-            this.render = mesh;
+            this.render = renderer;
 
             if (chunk != null) {
                 let relX = (pos.x - (chunk.chunkPos.x * Levels.Chunk.CHUNK_SIZE))
@@ -190,11 +188,9 @@ export namespace Blocks {
 
                 this.relativePos = new BlockPos(relX, pos.y, relZ);
 
+                // 3d -> 1d ===> (z * xMax * yMax) + (y * xMax) + x
                 this.index = ((relZ * Levels.Chunk.CHUNK_SIZE * Levels.Chunk.CHUNK_DEPTH) + (pos.y * Levels.Chunk.CHUNK_SIZE) + relX) * 6;
             }
-
-            Direction.values.forEach((dir) => this.faces.set(dir, true));
-            Direction.values.forEach((dir) => this.indexes.set(dir, -1));
         }
 
         public stringFaces(): string {
@@ -219,7 +215,7 @@ export namespace Blocks {
             }
 
             this.faces.forEach((face) => {
-                if(face) {
+                if (face) {
                     this.render.planes++;
                 }
             })
@@ -229,7 +225,6 @@ export namespace Blocks {
 
         public remove(scene: THREE.Scene) {
             this.unload(scene);
-            this.objects = [];
             this.block.remove(scene);
         }
 
@@ -242,9 +237,9 @@ export namespace Blocks {
             let oldValue = this.faces.get(updateDirection);
             if (needsFace != oldValue) {
                 this.faces.set(updateDirection, needsFace);
-                if(needsFace){
+                if (needsFace) {
                     this.render.planes++;
-                } else{
+                } else {
                     this.render.planes--;
                 }
             }
@@ -281,10 +276,9 @@ export namespace Blocks {
                     }
 
                     this.render.setMatrixAt(this.index + i, matrix);
-                }else{
+                } else {
                     this.render.removeMatrixAt(this.index + i);
                 }
-
             }
 
             this.render.updateMesh();

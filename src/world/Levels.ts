@@ -35,18 +35,13 @@ export namespace Levels {
                 this.blocks.get(serial).remove(this.level.scene);
             }
 
-            let relX = (pos.x - (this.chunkPos.x * Chunk.CHUNK_SIZE))
-            let relZ = (pos.z - (this.chunkPos.z * Chunk.CHUNK_SIZE))
-
-            // 3d -> 1d ===> (z * xMax * yMax) + (y * xMax) + x
-
             if (block == Blocks.AIR) {
-                const oldBLock = this.blocks.get(serial);
+                const oldBlock: BlockState = this.blocks.get(serial);
                 this.blocks.delete(serial);
 
-                oldBLock.faces.forEach(face => {
+                oldBlock.faces.forEach(face => {
                     if(face) {
-                        this.renderer.planes--;
+                        oldBlock.chunk.renderer.planes--;
                     }
                 })
 
@@ -54,15 +49,22 @@ export namespace Levels {
                 for (let i = 0; i < Direction.values.length; i++) {
                     let dir = Direction.values[i];
 
-                    if (oldBLock.faces.get(dir)){
-                        this.renderer.removeMatrixAt(oldBLock.index + i);
+                    if (oldBlock.faces.get(dir)){
+                        oldBlock.chunk.renderer.removeMatrixAt(oldBlock.index + i);
                     }
+                }
+
+                if(oldBlock.chunk != this){
+                    oldBlock.chunk.markDirty();
                 }
 
                 let state = new Blocks.BlockState(Blocks.AIR, pos, this.level, this, this.renderer);
                 this.level.getNeighbour(pos).forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
-                        neighbour.state.update(state, pos, neighbour.direction.opposite)
+                        neighbour.state.update(state, pos, neighbour.direction.opposite);
+                        if(neighbour.state.chunk != this){
+                            neighbour.state.chunk.markDirty()
+                        }
                     }
                 });
 
@@ -74,16 +76,15 @@ export namespace Levels {
 
                 neighbours.forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
-                        neighbour.state.update(state, pos, neighbour.direction.opposite)
+                        neighbour.state.update(state, pos, neighbour.direction.opposite);
+                        if(neighbour.state.chunk != this){
+                            neighbour.state.chunk.markDirty()
+                        }
                     }
                 })
             }
 
-            this.renderer.recomputeMesh();
-        }
-
-        public updateMesh(){
-
+            this.markDirty();
         }
 
         public getBlock(pos: BlockPos): BlockState {
@@ -109,7 +110,7 @@ export namespace Levels {
             for (let x = this.chunkPos.x * size; x < this.chunkPos.x * size + size; x++) {
                 for (let z = this.chunkPos.z * size; z < this.chunkPos.z * size + size; z++) {
                     let n = Math.max(1,
-                        (this.level.noise.noise2D(x / this.level.noiseFreq, z / this.level.noiseFreq) + 1) * 15
+                        (this.level.noise.noise2D(x / this.level.noiseFreq, z / this.level.noiseFreq) + 1) * Chunk.CHUNK_DEPTH
                     )
                     let ny = Math.round(n);
                     for (let y = 0; y < ny; y++) {
@@ -129,7 +130,7 @@ export namespace Levels {
                 return
             }
             console.log("Loading chunk " + this.chunkPos.serialize())
-            //this.blocks.forEach((block) => block.load(this.level.scene));
+
             this.renderer.add();
             this.loaded = true;
             this.level.loadedChunks.set(this.chunkPos.serialize(), this);
@@ -140,10 +141,14 @@ export namespace Levels {
                 return
             }
             console.log("Unloading chunk " + this.chunkPos.serialize())
-            //this.blocks.forEach((block) => block.unload(this.level.scene));
+
             this.renderer.remove()
             this.loaded = false;
             this.level.loadedChunks.delete(this.chunkPos.serialize());
+        }
+
+        public markDirty(){
+            this.level.dirtyChunks.set(this.chunkPos.serialize(),this);
         }
     }
 
@@ -169,39 +174,25 @@ export namespace Levels {
 
         recomputeMesh(){
             if(this.mesh) {
-                if (this.planes != this.renderedPlanes) {
-                    this.mesh.removeFromParent();
-                    this.computeMesh();
-                    for (let i = 0, j = 0; i < this.matrices.length; i++) {
-                        let matrix = this.matrices[i];
-                        if(matrix) {
-                            this.mesh.setMatrixAt(j, matrix);
-                            j++
-                        }
-                    }
+                this.mesh.removeFromParent();
+            }
+
+            this.computeMesh();
+
+            for (let i = 0, j = 0; i < this.matrices.length; i++) {
+                let matrix = this.matrices[i];
+                if(matrix) {
+                    this.mesh.setMatrixAt(j, matrix);
+                    j++
                 }
             }
+
+            this.scene.add(this.mesh);
         }
 
         add(){
-            if(!this.mesh){
-                this.computeMesh();
-
-                for (let i = 0, j = 0; i < this.matrices.length; i++) {
-                    let matrix = this.matrices[i];
-                    if(matrix) {
-                        this.mesh.setMatrixAt(j, matrix);
-                        j++
-                    }
-                }
-            } else{
-                this.recomputeMesh()
-            }
-
-            console.log("Adding mesh with planes: " + this.renderedPlanes + " and matrices: " + this.matrices.length)
-
-            this.scene.add(this.mesh);
-            this.updateMesh();
+            this.recomputeMesh()
+            //this.updateMesh();
         }
 
         remove(){
@@ -235,6 +226,7 @@ export namespace Levels {
     export class Level {
         private readonly chunks: Map<string, Chunk> = new Map<string, Chunk>();
         public readonly loadedChunks: Map<string, Chunk> = new Map<string, Chunk>();
+        public readonly dirtyChunks: Map<string, Chunk> = new Map<string, Chunk>(); //chunks to recomputeMesh()
         public readonly scene: THREE.Scene;
 
         public readonly seaLevel: 10;
@@ -353,6 +345,25 @@ export namespace Levels {
                     chunk.generate();
                 }
             });
+
+            this.recomputeDirty();
+        }
+
+        public reloadChunks(){
+            this.loadedChunks.forEach(chunk => {
+                chunk.unload();
+                chunk.renderer.recomputeMesh();
+                chunk.load()
+            })
+        }
+
+        public recomputeDirty(){
+            if(this.dirtyChunks.size > 0) {
+                this.dirtyChunks.forEach(chunk => {
+                    chunk.renderer.recomputeMesh();
+                })
+                this.dirtyChunks.clear()
+            }
         }
     }
 }

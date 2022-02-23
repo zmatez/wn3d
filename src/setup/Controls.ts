@@ -84,7 +84,7 @@ export namespace Controls {
             this.app = app;
             this.level = level;
             this.camera = camera;
-            this.camera.position.y = 32;
+            this.camera.position.y = Levels.Chunk.CHUNK_DEPTH;
             this.camera.rotation.order = 'YXZ';
             this.controls = new PointerLockControls(camera, document.body);
             this.prevPos = new Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
@@ -144,6 +144,10 @@ export namespace Controls {
             } else if(key == "l"){
                 if(down) {
                     this.app.skyBox.applyLights();
+                }
+            }  else if(key == "k"){
+                if(down) {
+                    this.level.reloadChunks()
                 }
             } else if(key == ","){
                 if(down) {

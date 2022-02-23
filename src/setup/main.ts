@@ -21,14 +21,13 @@ export class App {
     public player: Player;
     public working: boolean = true;
     public gui: GUI;
-    public readonly renderDistance: number = 10;
+    public readonly renderDistance: number = 2;
     public fpsStats: Stats;
     public ticksPerSecond: number = 5;
     public lastTick: Date;
     private clock = new THREE.Clock();
     private clockDelta = 0;
     private desiredFPS = 1 / 144;
-
 
     public skyBox: Skybox;
     public sunPos: number = 50;

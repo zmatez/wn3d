@@ -158,7 +158,7 @@ export namespace Environment {
             const phi = MathUtils.degToRad(this.config.elevation);
             const theta = MathUtils.degToRad(this.config.azimuth);
             this.light.position.setFromSphericalCoords(this.radius,phi,theta);
-            this.light.position.add(new Vector3(vec.x,this.level.seaLevel,vec.z));
+            this.light.position.add(new Vector3(vec.x,Levels.Chunk.CHUNK_DEPTH,vec.z));
             this.light.target.position.x = vec.x;
             this.light.target.position.z = vec.z;
             this.light.target.updateMatrixWorld();
