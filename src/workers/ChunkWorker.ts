@@ -1,0 +1,3 @@
+postMessage({
+    type: "ready"
+})

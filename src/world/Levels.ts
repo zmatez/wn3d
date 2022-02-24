@@ -16,7 +16,7 @@ export namespace Levels {
     export class Chunk {
         public static readonly CHUNK_SIZE: number = 16;
         public static readonly CHUNK_DEPTH: number = 64;
-        static readonly EMPTY_MATRIX: THREE.Matrix4 = new THREE.Matrix4().scale(new THREE.Vector3(0,0,0));
+        static readonly EMPTY_MATRIX: THREE.Matrix4 = new THREE.Matrix4().scale(new THREE.Vector3(0, 0, 0));
         public readonly blocks: Map<string, BlockState> = new Map<string, Blocks.BlockState>();
         private readonly level: Level;
         public readonly chunkPos: ChunkPos;
@@ -40,7 +40,7 @@ export namespace Levels {
                 this.blocks.delete(serial);
 
                 oldBlock.faces.forEach(face => {
-                    if(face) {
+                    if (face) {
                         oldBlock.chunk.renderer.planes--;
                     }
                 })
@@ -49,12 +49,12 @@ export namespace Levels {
                 for (let i = 0; i < Direction.values.length; i++) {
                     let dir = Direction.values[i];
 
-                    if (oldBlock.faces.get(dir)){
+                    if (oldBlock.faces.get(dir)) {
                         oldBlock.chunk.renderer.removeMatrixAt(oldBlock.index + i);
                     }
                 }
 
-                if(oldBlock.chunk != this){
+                if (oldBlock.chunk != this) {
                     oldBlock.chunk.markDirty();
                 }
 
@@ -62,7 +62,7 @@ export namespace Levels {
                 this.level.getNeighbour(pos).forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
                         neighbour.state.update(state, pos, neighbour.direction.opposite);
-                        if(neighbour.state.chunk != this){
+                        if (neighbour.state.chunk != this) {
                             neighbour.state.chunk.markDirty()
                         }
                     }
@@ -77,7 +77,7 @@ export namespace Levels {
                 neighbours.forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
                         neighbour.state.update(state, pos, neighbour.direction.opposite);
-                        if(neighbour.state.chunk != this){
+                        if (neighbour.state.chunk != this) {
                             neighbour.state.chunk.markDirty()
                         }
                     }
@@ -90,7 +90,7 @@ export namespace Levels {
         public getBlock(pos: BlockPos): BlockState {
             let block = this.blocks.get(pos.serialize());
             if (!block) {
-                return new Blocks.BlockState(Blocks.AIR, pos, this.level, this,null);
+                return new Blocks.BlockState(Blocks.AIR, pos, this.level, this, null);
             }
 
             return block;
@@ -110,9 +110,9 @@ export namespace Levels {
             for (let x = this.chunkPos.x * size; x < this.chunkPos.x * size + size; x++) {
                 for (let z = this.chunkPos.z * size; z < this.chunkPos.z * size + size; z++) {
                     let n = Math.max(1,
-                        (this.level.noise.noise2D(x / this.level.noiseFreq, z / this.level.noiseFreq) + 1) * Chunk.CHUNK_DEPTH
+                        (this.level.noise.noise2D(x / this.level.noiseFreq, z / this.level.noiseFreq) + 1) * (Chunk.CHUNK_DEPTH / 2)
                     )
-                    let ny = Math.round(n);
+                    let ny = Math.min(Math.round(n), Chunk.CHUNK_DEPTH);
                     for (let y = 0; y < ny; y++) {
                         let pos = BlockPos.create(x, y, z);
                         let block = Blocks.DIRT;
@@ -147,8 +147,8 @@ export namespace Levels {
             this.level.loadedChunks.delete(this.chunkPos.serialize());
         }
 
-        public markDirty(){
-            this.level.dirtyChunks.set(this.chunkPos.serialize(),this);
+        public markDirty() {
+            this.level.dirtyChunks.set(this.chunkPos.serialize(), this);
         }
     }
 
@@ -165,15 +165,17 @@ export namespace Levels {
             this.scene = scene;
         }
 
-        computeMesh(){
+        computeMesh() {
             this.mesh = new THREE.InstancedMesh(Blocks.Block.CUBE_GEOMETRY, Textures.material, this.planes);
             this.mesh.position.x = this.chunk.chunkPos.x * Chunk.CHUNK_SIZE;
             this.mesh.position.z = this.chunk.chunkPos.z * Chunk.CHUNK_SIZE;
+            this.mesh.castShadow = true;
+            this.mesh.receiveShadow = true;
             this.renderedPlanes = this.planes;
         }
 
-        recomputeMesh(){
-            if(this.mesh) {
+        recomputeMesh() {
+            if (this.mesh) {
                 this.mesh.removeFromParent();
             }
 
@@ -181,7 +183,7 @@ export namespace Levels {
 
             for (let i = 0, j = 0; i < this.matrices.length; i++) {
                 let matrix = this.matrices[i];
-                if(matrix) {
+                if (matrix) {
                     this.mesh.setMatrixAt(j, matrix);
                     j++
                 }
@@ -190,25 +192,25 @@ export namespace Levels {
             this.scene.add(this.mesh);
         }
 
-        add(){
+        add() {
             this.recomputeMesh()
             //this.updateMesh();
         }
 
-        remove(){
+        remove() {
             this.mesh.removeFromParent();
         }
 
         setMatrixAt(index: number, matrix: THREE.Matrix4) {
             this.matrices[index] = matrix;
-            if(this.mesh){
-                this.mesh.setMatrixAt(index,matrix);
+            if (this.mesh) {
+                this.mesh.setMatrixAt(index, matrix);
             }
         }
 
-        setMatrix(matrix: THREE.Matrix4): number{
+        setMatrix(matrix: THREE.Matrix4): number {
             let index = this.matrices.length;
-            this.setMatrixAt(index,matrix);
+            this.setMatrixAt(index, matrix);
             return index;
         }
 
@@ -216,8 +218,8 @@ export namespace Levels {
             this.matrices[index] = null;
         }
 
-        updateMesh(){
-            if(this.mesh) {
+        updateMesh() {
+            if (this.mesh) {
                 this.mesh.instanceMatrix.needsUpdate = true;
             }
         }
@@ -233,10 +235,22 @@ export namespace Levels {
         public readonly noise = new SimplexNoise();
         public readonly noiseFreq = 50;
 
+        public readonly worker: Worker;
+
         public gravity: number = 0.008;
 
         constructor(scene: THREE.Scene) {
             this.scene = scene;
+
+            this.worker = new Worker("dist/bundle_worker.js");
+            this.worker.addEventListener("message", (msg) => {
+                let type: string = msg.data['type'];
+                if (type == "ready") {
+                    console.info("Chunk worker ready")
+                } else if (type == "chunk") {
+
+                }
+            })
         }
 
         public createChunk(pos: ChunkPos): Chunk {
@@ -266,7 +280,7 @@ export namespace Levels {
                 return this.chunks.get(long).getBlock(pos);
             }
 
-            return new Blocks.BlockState(Blocks.AIR, pos, this, null,null);
+            return new Blocks.BlockState(Blocks.AIR, pos, this, null, null);
         }
 
         public forEachBlockNear(pos: BlockPos, xzRange: number, yRange: number, callback: (state: BlockState, pos: BlockPos) => boolean) {
@@ -310,10 +324,19 @@ export namespace Levels {
             let chunkPos = ChunkPos.fromBlockPos(pos);
             loadedPos.push(chunkPos);
 
-            for (let i = -range; i <= range; i++) {
-                for (let j = -range; j <= range; j++) {
-                    let nextChunkPos = chunkPos.relative(i, j);
-                    loadedPos.push(nextChunkPos);
+            // for (let i = -range; i <= range; i++) {
+            //     for (let j = -range; j <= range; j++) {
+            //         let nextChunkPos = chunkPos.relative(i, j);
+            //         loadedPos.push(nextChunkPos);
+            //     }
+            // }
+
+            for (let i = 0; i <= range; i++) { //start at center and move out layer by layer
+                for (let x = -i; x <= i; x++) { //get all chunks inside current layer
+                    for (let z = -i; z <= i; z++) {
+                        let nextPos = chunkPos.relative(x, z);
+                        loadedPos.push(nextPos);
+                    }
                 }
             }
 
@@ -349,7 +372,7 @@ export namespace Levels {
             this.recomputeDirty();
         }
 
-        public reloadChunks(){
+        public reloadChunks() {
             this.loadedChunks.forEach(chunk => {
                 chunk.unload();
                 chunk.renderer.recomputeMesh();
@@ -357,8 +380,8 @@ export namespace Levels {
             })
         }
 
-        public recomputeDirty(){
-            if(this.dirtyChunks.size > 0) {
+        public recomputeDirty() {
+            if (this.dirtyChunks.size > 0) {
                 this.dirtyChunks.forEach(chunk => {
                     chunk.renderer.recomputeMesh();
                 })
