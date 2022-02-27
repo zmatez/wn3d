@@ -1,17 +1,30 @@
 import {Directions} from "./Directions";
 import {Vec3Base} from "./Vec3Base";
+import {Levels} from "../world/Levels";
 
 export namespace Vec {
     import Axis = Directions.Axis;
     import Direction = Directions.Direction;
 
     export class Vec3 extends Vec3Base.Vec3Base {
-        protected create(x: number, y: number, z: number): Vec3 {
-            return Vec3.create(x, y, z);
-        }
-
         public static create(x: number, y: number, z: number): Vec3 {
             return new Vec3(x, y, z);
+        }
+
+        public static deserialize(pos: string): Vec3 | BlockPos {
+            let type = pos.charAt(0);
+
+            let split = pos.substr(1).split("=");
+
+            try {
+                if (type == "B") {
+                    return new BlockPos(parseInt(split[0]), parseInt(split[1]), parseInt(split[2]));
+                } else {
+                    return new Vec3(parseFloat(split[0]), parseFloat(split[1]), parseFloat(split[2]));
+                }
+            } catch (e) {
+                return null;
+            }
         }
 
         public relative(x: number, y: number, z: number): Vec3 {
@@ -38,30 +51,18 @@ export namespace Vec {
             return "V" + this.x + "=" + this.y + "=" + this.z;
         }
 
-        public static deserialize(pos: string): Vec3 | BlockPos {
-            let type = pos.charAt(0);
-
-            let split = pos.substr(1).split("=");
-
-            try {
-                if (type == "B") {
-                    return new BlockPos(parseInt(split[0]), parseInt(split[1]), parseInt(split[2]));
-                } else {
-                    return new Vec3(parseFloat(split[0]), parseFloat(split[1]), parseFloat(split[2]));
-                }
-            } catch (e) {
-                return null;
-            }
+        protected create(x: number, y: number, z: number): Vec3 {
+            return Vec3.create(x, y, z);
         }
     }
 
     export class BlockPos extends Vec3 {
-        public static of(vec3: Vec3): BlockPos {
-            return BlockPos.create(vec3.x, vec3.y, vec3.z);
+        public get aabb(): AABB {
+            return new AABB(this, this.relative(1, 1, 1));
         }
 
-        protected create(x: number, y: number, z: number): BlockPos {
-            return BlockPos.create(x, y, z);
+        public static of(vec3: Vec3): BlockPos {
+            return BlockPos.create(vec3.x, vec3.y, vec3.z);
         }
 
         public static create(x: number, y: number, z: number): BlockPos {
@@ -70,10 +71,6 @@ export namespace Vec {
 
         public serialize(): string {
             return "B" + this.x + "=" + this.y + "=" + this.z;
-        }
-
-        public get aabb(): AABB {
-            return new AABB(this, this.relative(1, 1, 1));
         }
 
         relative(x: number, y: number, z: number): BlockPos {
@@ -90,6 +87,10 @@ export namespace Vec {
 
         offset(direction: Directions.Direction, amount: number): BlockPos {
             return <BlockPos>super.offset(direction, amount);
+        }
+
+        protected create(x: number, y: number, z: number): BlockPos {
+            return BlockPos.create(x, y, z);
         }
     }
 
@@ -163,24 +164,31 @@ export namespace Vec {
             this.z = z;
         }
 
-        public serialize(): string {
-            return this.x + "=" + this.z;
-        }
-
         public static deserialize(serial: string): ChunkPos {
             let str = serial.split("=");
-            return new ChunkPos(parseInt(str[0]),parseInt(str[1]));
+            return new ChunkPos(parseInt(str[0]), parseInt(str[1]));
         }
 
         public static fromBlockPos(pos: BlockPos): ChunkPos {
             return new ChunkPos(pos.x >> 4, pos.z >> 4);
         }
 
+        public relativeBlockPos(pos: BlockPos): BlockPos {
+            let relX = (pos.x - (this.x * Levels.Chunk.CHUNK_SIZE))
+            let relZ = (pos.z - (this.z * Levels.Chunk.CHUNK_SIZE))
+
+            return new BlockPos(relX, pos.y, relZ);
+        }
+
+        public serialize(): string {
+            return this.x + "=" + this.z;
+        }
+
         public relative(x: number, z: number): ChunkPos {
             return new ChunkPos(this.x + x, this.z + z);
         }
 
-        public equals(pos: ChunkPos){
+        public equals(pos: ChunkPos) {
             return this.x == pos.x && this.z == pos.z;
         }
     }

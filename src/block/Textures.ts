@@ -99,13 +99,6 @@ export namespace Textures {
                 .with(Direction.WEST, this.newMat(pathSide))
         }
 
-        private static load(path: string, filter: THREE.TextureFilter): THREE.Texture {
-            let texture = MaterialHelper.loader.load(path);
-            texture.minFilter = filter;
-            texture.magFilter = filter;
-            return texture;
-        }
-
         public static newMat(path: string): THREE.Material {
             let map = MaterialHelper.load(path, THREE.NearestFilter);
             return new THREE.MeshLambertMaterial({
@@ -113,11 +106,19 @@ export namespace Textures {
                 side: THREE.BackSide
             });
         }
+
+        private static load(path: string, filter: THREE.TextureFilter): THREE.Texture {
+            let texture = MaterialHelper.loader.load(path);
+            texture.minFilter = filter;
+            texture.magFilter = filter;
+            return texture;
+        }
     }
 
     export class Texture {
         public static textures: Texture[] = [];
         public path;
+        public id;
 
         /**
          * @param path starts with 'assets/'
@@ -126,16 +127,16 @@ export namespace Textures {
             this.path = path;
         }
 
+        public static register(texture: Texture): Texture {
+            this.textures.push(texture);
+            return texture;
+        }
+
         getImage(): HTMLImageElement {
             let img = document.createElement('img');
             img.src = "assets/" + this.path;
 
             return img;
-        }
-
-        public static register(texture: Texture): Texture{
-            this.textures.push(texture);
-            return texture;
         }
     }
 
@@ -145,15 +146,16 @@ export namespace Textures {
         }
     }
 
-    const T_GRASS_BLOCK_TOP = Texture.register(new BlockTexture("grass_block_top"));
-    const T_GRASS_BLOCK_SIDE = Texture.register(new BlockTexture("grass_block_side"));
-    const T_DIRT = Texture.register(new BlockTexture("dirt"));
-    const T_STONE = Texture.register(new BlockTexture("stone"));
+    export const T_GRASS_BLOCK_TOP = Texture.register(new BlockTexture("grass_block_top"));
+    export const T_GRASS_BLOCK_SIDE = Texture.register(new BlockTexture("grass_block_side"));
+    export const T_DIRT = Texture.register(new BlockTexture("dirt"));
+    export const T_STONE = Texture.register(new BlockTexture("stone"));
 
     export class TextureAtlas {
+        public img: HTMLImageElement;
+        public loaded = false;
         private textures: Texture[];
         private entries: Map<Texture, TextureEntry> = new Map<Textures.Texture, Textures.TextureEntry>();
-        public img: HTMLImageElement;
 
         constructor(textures: Texture[]) {
             this.textures = textures;
@@ -164,23 +166,72 @@ export namespace Textures {
             let total = this.textures.length;
             const update = () => {
                 progress++;
-                if(progress == total) {
+                if (progress == total) {
                     this.stitch();
                 }
 
-                callback(progress,total);
+                callback(progress, total);
             }
             let lastX = 0;
             this.textures.forEach((texture) => {
                 let img = texture.getImage();
                 img.onload = () => {
-                    let entry = new TextureEntry(texture,lastX,0);
+                    let entry = new TextureEntry(texture, lastX, 0);
                     entry.img = img;
                     lastX += entry.width;
-                    this.entries.set(texture,entry);
+                    this.entries.set(texture, entry);
                     update()
                 }
             })
+        }
+
+        getAtlas(): THREE.Texture {
+            let tex = new THREE.Texture(this.img);
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            tex.needsUpdate = true;
+            console.log("Loaded atlas of " + this.img.width + "x" + this.img.height)
+            return tex;
+        }
+
+        getMaterial(): THREE.Material {
+            let mat = new THREE.MeshLambertMaterial({
+                side: THREE.BackSide,
+            })
+
+            const texAtlas = this.getAtlas();
+            let texStep = 1 / this.textures.length;
+
+            mat.onBeforeCompile = (shader) => {
+                shader.uniforms.texAtlas = {value: texAtlas};
+                shader.vertexShader = `
+    	            attribute float texIdx;
+    	            varying float vTexIdx;
+                    ${shader.vertexShader}
+                `.replace(
+                    `void main() {`, `
+                    void main() {
+      	            vTexIdx = texIdx;
+                    `);
+                shader.fragmentShader = `
+    	            uniform sampler2D texAtlas;
+    	            varying float vTexIdx;
+                    ${shader.fragmentShader}
+                    `.replace(
+                    `#include <map_fragment>`,
+                    `
+                    #include <map_fragment>
+      	            vec2 uv = vUv;
+      	            
+       	            vec2 blockUv = vec2(uv.x * ${texStep} + (${texStep} * vTexIdx),uv.y); 
+                    vec4 blockColor = texture(texAtlas, blockUv);
+                    diffuseColor *= blockColor;
+                `);
+            }
+            mat.defines = {"USE_UV": ""};
+
+
+            return mat;
         }
 
         private stitch() {
@@ -191,36 +242,42 @@ export namespace Textures {
                 let mx = texture.x + texture.width;
                 let my = texture.y + texture.height;
 
-                if(mx > maxX) {
+                if (mx > maxX) {
                     maxX = mx;
                 }
 
-                if(my > maxY) {
+                if (my > maxY) {
                     maxY = my;
                 }
             })
 
             const canvas = document.createElement('canvas');
+            canvas.width = maxX;
+            canvas.height = maxY;
             const atlas = canvas.getContext('2d');
 
+            let id = 0;
             this.entries.forEach((texture) => {
+                texture.texture.id = id;
                 const context = document.createElement('canvas').getContext('2d');
                 context.drawImage(texture.img, 0, 0);
-                let data = context.getImageData(0,0,texture.width,texture.height).data;
+                let data = context.getImageData(0, 0, texture.width, texture.height).data;
 
                 let imageWidth = texture.width;
 
-                for(let x = 0; x < texture.width; x++){
-                    for(let y = 0; y < texture.height; y++){
+                for (let x = 0; x < texture.width; x++) {
+                    for (let y = 0; y < texture.height; y++) {
                         let red = data[((imageWidth * y) + x) * 4];
                         let green = data[((imageWidth * y) + x) * 4 + 1];
                         let blue = data[((imageWidth * y) + x) * 4 + 2];
                         let alpha = data[((imageWidth * y) + x) * 4 + 3];
 
                         atlas.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-                        atlas.fillRect(texture.x + x, texture.y + y,1,1);
+                        atlas.fillRect(texture.x + x, texture.y + y, 1, 1);
                     }
                 }
+
+                id++;
             })
 
             let image = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
@@ -229,22 +286,7 @@ export namespace Textures {
             this.img.src = image;
             this.img.width = maxX;
             this.img.height = maxY;
-        }
-
-        getAtlas(): THREE.Texture {
-            let tex = new THREE.Texture(this.img);
-            tex.minFilter = THREE.NearestFilter;
-            tex.magFilter = THREE.NearestFilter;
-            return tex;
-        }
-
-        getMaterial(): THREE.Material {
-            let mat = new THREE.MeshLambertMaterial({
-                side: THREE.BackSide,
-                map: this.getAtlas()
-            })
-
-            return mat;
+            this.loaded = true;
         }
     }
 
@@ -260,25 +302,19 @@ export namespace Textures {
             this.y = y;
         }
 
-        get width(){
+        get width() {
             return this.img.width;
         }
 
-        get height(){
+        get height() {
             return this.img.height;
         }
     }
 
-    export const atlas = new TextureAtlas(Texture.textures);
-    atlas.load((progress, total) => {
-        console.log("Processing atlas " + progress + "/" + total);
+    export let atlas: TextureAtlas;
 
-        if(progress == total){
-            document.body.appendChild(atlas.img);
-        }
-    })
-
-    export const material = MaterialHelper.makeFullCube("assets/textures/blocks/stone.png").toArray()[0];
+    //export const material = MaterialHelper.makeFullCube("assets/textures/blocks/stone.png").toArray()[0];
+    export let material: THREE.Material;
 
     export class ShaderHelper {
         public static load(path: string): string {
@@ -289,5 +325,20 @@ export namespace Textures {
 
             return glsl;
         }
+    }
+
+    export const load = (progressCallback: (percentage: number) => void) => {
+        atlas = new TextureAtlas(Texture.textures);
+        atlas.load((progress, total) => {
+            console.log("Processing atlas " + progress + "/" + total);
+
+            if (progress == total) {
+                material = atlas.getMaterial();
+                //App.instance.gui.element.appendChild(atlas.img);
+            }
+
+            progressCallback(Math.ceil((progress / total) * 100));
+        });
+
     }
 }

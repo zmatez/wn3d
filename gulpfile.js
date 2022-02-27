@@ -9,7 +9,7 @@ const mainify = (
     browserify({
         basedir: ".",
         debug: true,
-        entries: ["./src/setup/main.ts"],
+        entries: ["./src/setup/start.ts"],
         cache: {},
         packageCache: {},
         exclude: []
@@ -53,6 +53,7 @@ function bundleWorker() {
 // tasks
 
 gulp.task("default", gulp.series(bundleMain,bundleWorker));
+//gulp.task("default", gulp.series(bundleMain));
 mainify.on("update", () => {
     bundleMain()
     bundleWorker()

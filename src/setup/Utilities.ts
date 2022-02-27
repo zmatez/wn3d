@@ -1,5 +1,5 @@
-export namespace Utilities{
-    export class Utils{
+export namespace Utilities {
+    export class Utils {
         public static getSync(path: string): string | null {
             let request = new XMLHttpRequest();
             request.open('GET', path, false);

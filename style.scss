@@ -1,7 +1,22 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800;900&display=swap");
+
 html, body{
     margin: 0;
     padding: 0;
     overflow: hidden;
+    background-color: #373943
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+h1, h2, h3, h4 {
+    margin: 0 0 10px;
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
 }
 
 .gui{
@@ -10,6 +25,9 @@ html, body{
     left: 0;
     right: 0;
     bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 
     .debug-info{
         color: white;
@@ -24,6 +42,12 @@ html, body{
         flex-flow: column;
         background-color: transparentize(black, 0.4);
         border-bottom-right-radius: 5px;
+        border-right: 2px solid transparent;
+        border-bottom: 2px solid transparent;
+
+        &.error{
+            border-color: #ea1547;
+        }
     }
     .stats{
         position: absolute;
@@ -40,21 +64,91 @@ html, body{
     }
 
     .pointer{
-        position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
+        position: fixed;
         display: flex;
         justify-content: center;
         align-items: center;
 
-        img{
+        img {
             image-rendering: pixelated;
             image-rendering: crisp-edges;
             width: 25px;
             height: 25px;
             mix-blend-mode: difference;
         }
+    }
+
+    .progress-box{
+        display: flex;
+        flex-flow: column;
+        align-items: center;
+        justify-content: stretch;
+        background-color: #242a2f;
+        color: white;
+        width: 420px;
+        height: 330px;
+        box-shadow: 0 0 10px 0 transparentize(black,0.7);
+        border-radius: 5px;
+
+        &.close{
+            animation: fadeout 0.2s ease-in-out forwards;
+        }
+
+        .image{
+            margin-top: 15%;
+            margin-bottom: 5%;
+            width: 128px;
+            height: 128px;
+        }
+
+        .title{
+            margin: 0 0 0 10px;
+            font-size: 20px;
+            font-family: "Poppins", "Raleway", sans-serif;
+            font-weight: 600;
+        }
+
+        .bar-outer{
+            margin: 7% 0;
+            width: 75%;
+            background-color: #3a3c3e;
+            height: 4px;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+
+            .bar-inner{
+                position: absolute;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                background-color: #45c665;
+                transition: width ease-in-out 0.15s;
+                max-width: 100%;
+            }
+        }
+    }
+}
+
+//------------------------------------
+@keyframes fadein {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 100%;
+    }
+}
+
+@keyframes fadeout {
+    0% {
+        opacity: 100%;
+    }
+    100% {
+        opacity: 0;
     }
 }

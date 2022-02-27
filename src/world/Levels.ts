@@ -1,27 +1,25 @@
 import {Blocks} from "../block/Blocks";
 import {Vec} from "../math/Vec";
 import * as THREE from "three";
+import {InstancedBufferAttribute, PlaneBufferGeometry} from "three";
 import {Directions} from "../math/Directions";
 import SimplexNoise from "simplex-noise";
 import {Textures} from "../block/Textures";
+import {ChunkGeneration} from "../workers/ChunkGeneration";
 
 export namespace Levels {
-
     import BlockState = Blocks.BlockState;
-    import BlockPos = Vec.BlockPos;
     import Block = Blocks.Block;
-    import ChunkPos = Vec.ChunkPos;
     import Direction = Directions.Direction;
 
     export class Chunk {
         public static readonly CHUNK_SIZE: number = 16;
         public static readonly CHUNK_DEPTH: number = 64;
-        static readonly EMPTY_MATRIX: THREE.Matrix4 = new THREE.Matrix4().scale(new THREE.Vector3(0, 0, 0));
-        public readonly blocks: Map<string, BlockState> = new Map<string, Blocks.BlockState>();
-        private readonly level: Level;
-        public readonly chunkPos: ChunkPos;
+        public blocks: BlockState[][][] = [];
+        public readonly chunkPos: Vec.ChunkPos;
         public loaded = false;
         public renderer: ChunkRenderer;
+        private readonly level: Level;
 
         constructor(level: Level, chunkPos: Vec.ChunkPos) {
             this.level = level;
@@ -29,15 +27,28 @@ export namespace Levels {
             this.renderer = new ChunkRenderer(this, level.scene);
         }
 
-        public setBlock(pos: BlockPos, block: Block): void {
-            let serial = pos.serialize();
-            if (this.blocks.has(serial)) {
-                this.blocks.get(serial).remove(this.level.scene);
+        private makeArray(x: number, y: number, z: number) {
+            if(!this.blocks[x]){
+                this.blocks[x] = [];
+            }
+
+            if(!this.blocks[x][y]){
+                this.blocks[x][y] = [];
+            }
+        }
+
+        public setBlock(pos: Vec.BlockPos, block: Block): void {
+            let cp = this.chunkPos.relativeBlockPos(pos);
+            this.makeArray(cp.x,cp.y,cp.z);
+
+            const oldBlock: BlockState = this.blocks[cp.x][cp.y][cp.z];
+
+            if (oldBlock) {
+                oldBlock.remove(this.level.scene);
             }
 
             if (block == Blocks.AIR) {
-                const oldBlock: BlockState = this.blocks.get(serial);
-                this.blocks.delete(serial);
+                this.blocks[cp.x][cp.y][cp.z] = null;
 
                 oldBlock.faces.forEach(face => {
                     if (face) {
@@ -58,7 +69,8 @@ export namespace Levels {
                     oldBlock.chunk.markDirty();
                 }
 
-                let state = new Blocks.BlockState(Blocks.AIR, pos, this.level, this, this.renderer);
+                let state = new Blocks.BlockState(Blocks.AIR, pos);
+                state.setupLevel(this.level, this, this.renderer);
                 this.level.getNeighbour(pos).forEach(neighbour => {
                     if (neighbour.state.block != Blocks.AIR) {
                         neighbour.state.update(state, pos, neighbour.direction.opposite);
@@ -69,8 +81,9 @@ export namespace Levels {
                 });
 
             } else {
-                let state = new Blocks.BlockState(block, pos, this.level, this, this.renderer);
-                this.blocks.set(serial, state);
+                let state = new Blocks.BlockState(block, pos);
+                state.setupLevel(this.level, this, this.renderer);
+                this.blocks[cp.x][cp.y][cp.z] = state;
                 let neighbours = this.level.getNeighbour(pos);
                 state.onPlace(neighbours);
 
@@ -87,19 +100,23 @@ export namespace Levels {
             this.markDirty();
         }
 
-        public getBlock(pos: BlockPos): BlockState {
-            let block = this.blocks.get(pos.serialize());
+        public getBlock(pos: Vec.BlockPos): BlockState {
+            let cp = this.chunkPos.relativeBlockPos(pos);
+            this.makeArray(cp.x,cp.y,cp.z);
+            let block = this.blocks[cp.x][cp.y][cp.z];
             if (!block) {
-                return new Blocks.BlockState(Blocks.AIR, pos, this.level, this, null);
+                const state = new Blocks.BlockState(Blocks.AIR, pos);
+                state.setupLevel(this.level, this, null);
+                return state;
             }
 
             return block;
         }
 
         public tick() {
-            this.blocks.forEach((state, pos) => {
-                state.tick();
-            });
+            // this.blocks.forEach((state, pos) => {
+            //     state.tick();
+            // });
         }
 
         public generate() {
@@ -114,7 +131,7 @@ export namespace Levels {
                     )
                     let ny = Math.min(Math.round(n), Chunk.CHUNK_DEPTH);
                     for (let y = 0; y < ny; y++) {
-                        let pos = BlockPos.create(x, y, z);
+                        let pos = Vec.BlockPos.create(x, y, z);
                         let block = Blocks.DIRT;
                         if (y == ny - 1) {
                             block = Blocks.GRASS_BLOCK;
@@ -158,7 +175,9 @@ export namespace Levels {
         public planes: number = 0;
         public renderedPlanes: number = 0;
         public chunk: Chunk;
-        public matrices: THREE.Matrix4[] = []
+        public matrices: MatrixTexture[] = [];
+        public geometry: THREE.PlaneBufferGeometry = new PlaneBufferGeometry(1, 1, 1);
+        public texIdx: Float32Array;
 
         constructor(chunk: Levels.Chunk, scene: THREE.Scene) {
             this.chunk = chunk;
@@ -166,12 +185,16 @@ export namespace Levels {
         }
 
         computeMesh() {
-            this.mesh = new THREE.InstancedMesh(Blocks.Block.CUBE_GEOMETRY, Textures.material, this.planes);
+            let geom = this.geometry.clone()
+            this.mesh = new THREE.InstancedMesh(geom, Textures.material, this.planes);
             this.mesh.position.x = this.chunk.chunkPos.x * Chunk.CHUNK_SIZE;
             this.mesh.position.z = this.chunk.chunkPos.z * Chunk.CHUNK_SIZE;
             this.mesh.castShadow = true;
             this.mesh.receiveShadow = true;
             this.renderedPlanes = this.planes;
+
+            this.texIdx = new Float32Array(this.planes).fill(0);
+            geom.setAttribute("texIdx", new InstancedBufferAttribute(this.texIdx, 1))
         }
 
         recomputeMesh() {
@@ -181,11 +204,12 @@ export namespace Levels {
 
             this.computeMesh();
 
-            for (let i = 0, j = 0; i < this.matrices.length; i++) {
+            for (let i = 0, index = 0; i < this.matrices.length; i++) {
                 let matrix = this.matrices[i];
                 if (matrix) {
-                    this.mesh.setMatrixAt(j, matrix);
-                    j++
+                    this.mesh.setMatrixAt(index, matrix.matrix);
+                    this.texIdx[index] = matrix.texture != null ? matrix.texture.id : 0;
+                    index++
                 }
             }
 
@@ -201,17 +225,12 @@ export namespace Levels {
             this.mesh.removeFromParent();
         }
 
-        setMatrixAt(index: number, matrix: THREE.Matrix4) {
+        setMatrixAt(index: number, matrix: MatrixTexture) {
             this.matrices[index] = matrix;
             if (this.mesh) {
-                this.mesh.setMatrixAt(index, matrix);
+                this.mesh.setMatrixAt(index, matrix.matrix);
+                this.texIdx[index] = matrix.texture != null ? matrix.texture.id : 0;
             }
-        }
-
-        setMatrix(matrix: THREE.Matrix4): number {
-            let index = this.matrices.length;
-            this.setMatrixAt(index, matrix);
-            return index;
         }
 
         removeMatrixAt(index: number) {
@@ -225,42 +244,100 @@ export namespace Levels {
         }
     }
 
+    export class MatrixTexture {
+        public matrix: THREE.Matrix4;
+        public texture: Textures.Texture;
+
+        constructor(matrix: THREE.Matrix4, texture: Textures.Texture) {
+            this.matrix = matrix;
+            this.texture = texture;
+        }
+    }
+
     export class Level {
-        private readonly chunks: Map<string, Chunk> = new Map<string, Chunk>();
         public readonly loadedChunks: Map<string, Chunk> = new Map<string, Chunk>();
         public readonly dirtyChunks: Map<string, Chunk> = new Map<string, Chunk>(); //chunks to recomputeMesh()
         public readonly scene: THREE.Scene;
-
-        public readonly seaLevel: 10;
+        public readonly renderDistance: number;
         public readonly noise = new SimplexNoise();
         public readonly noiseFreq = 50;
-
         public readonly worker: Worker;
-
+        public lastSentPos: Vec.ChunkPos;
         public gravity: number = 0.008;
+        private readonly chunks: Map<string, Chunk> = new Map<string, Chunk>();
 
-        constructor(scene: THREE.Scene) {
+        constructor(scene: THREE.Scene, renderDistance: number) {
             this.scene = scene;
+            this.renderDistance = renderDistance;
 
             this.worker = new Worker("dist/bundle_worker.js");
             this.worker.addEventListener("message", (msg) => {
                 let type: string = msg.data['type'];
+                let data: any = msg.data['data'];
                 if (type == "ready") {
                     console.info("Chunk worker ready")
-                } else if (type == "chunk") {
+                } else if (type == "generate") {
+                    ChunkGeneration.BlockChunk.deserialize(data['chunk'], this, (chunk) => {
+                        chunk.markDirty();
+                        chunk.load();
+                        this.recomputeDirty();
+                        console.log("generated chunk at " + chunk.chunkPos.serialize());
+                    });
+                } else if (type == "load") {
+                    if (typeof data['x'] == "number" && typeof data['z'] == "number") {
+                        let pos = new Vec.ChunkPos(data['x'], data['z']);
+                        let chunk: Chunk;
+                        let serial = pos.serialize();
+                        console.log("loading chunk at " + serial)
+                        // if (!this.chunks.has(serial)) {
+                        //     chunk = this.createChunk(pos);
+                        //     chunk.generate();
+                        // } else {
+                        //     chunk = this.chunks.get(serial);
+                        // }
+                        //
+                        // chunk.load();
 
+                        if (this.chunks.has(serial)) {
+                            let chunk = this.chunks.get(serial);
+                            chunk.load();
+                        }
+
+                        this.recomputeDirty();
+                    }
+                } else if (type == "unload") {
+                    console.log("unload")
+                    console.log(data)
+                    if (typeof data['x'] == "number" && typeof data['z'] == "number") {
+                        let pos = new Vec.ChunkPos(data['x'], data['z']);
+
+                        let serial = pos.serialize();
+                        console.log("unloading chunk at " + serial)
+
+                        if (this.chunks.has(serial)) {
+                            let chunk = this.chunks.get(serial);
+                            chunk.unload();
+                        }
+
+                        this.recomputeDirty();
+                    }
                 }
+            });
+
+            this.worker.postMessage({
+                type: "render_distance",
+                data: this.renderDistance
             })
         }
 
-        public createChunk(pos: ChunkPos): Chunk {
+        public createChunk(pos: Vec.ChunkPos): Chunk {
             let chunk = new Chunk(this, pos);
             this.chunks.set(pos.serialize(), chunk);
             return chunk;
         }
 
-        public setBlock(pos: BlockPos, block: Block): void {
-            let chunkPos = ChunkPos.fromBlockPos(pos);
+        public setBlock(pos: Vec.BlockPos, block: Block): void {
+            let chunkPos = Vec.ChunkPos.fromBlockPos(pos);
             let long = chunkPos.serialize();
 
             let chunk: Chunk = null;
@@ -273,22 +350,24 @@ export namespace Levels {
             chunk.setBlock(pos, block);
         }
 
-        public getBlock(pos: BlockPos): BlockState {
-            let chunkPos = ChunkPos.fromBlockPos(pos);
+        public getBlock(pos: Vec.BlockPos): BlockState {
+            let chunkPos = Vec.ChunkPos.fromBlockPos(pos);
             let long = chunkPos.serialize();
             if (this.chunks.has(long)) {
                 return this.chunks.get(long).getBlock(pos);
             }
 
-            return new Blocks.BlockState(Blocks.AIR, pos, this, null, null);
+            const state = new Blocks.BlockState(Blocks.AIR, pos);
+            state.setupLevel(this, null, null);
+            return state;
         }
 
-        public forEachBlockNear(pos: BlockPos, xzRange: number, yRange: number, callback: (state: BlockState, pos: BlockPos) => boolean) {
-            let blockPos: BlockPos[] = [];
+        public forEachBlockNear(pos: Vec.BlockPos, xzRange: number, yRange: number, callback: (state: BlockState, pos: Vec.BlockPos) => boolean) {
+            let blockPos: Vec.BlockPos[] = [];
             for (let x = pos.x - (xzRange / 2); x <= pos.x + (xzRange / 2); x++) {
                 for (let z = pos.z - (xzRange / 2); z <= pos.z + (xzRange / 2); z++) {
                     for (let y = pos.y - (yRange / 2); y <= pos.y + (yRange / 2); y++) {
-                        blockPos.push(new BlockPos(x, y, z));
+                        blockPos.push(new Vec.BlockPos(x, y, z));
                     }
                 }
             }
@@ -301,7 +380,7 @@ export namespace Levels {
             })
         }
 
-        public getNeighbour(pos: BlockPos): { direction: Direction, state: BlockState }[] {
+        public getNeighbour(pos: Vec.BlockPos): { direction: Direction, state: BlockState }[] {
             let neighbours = [];
 
             Direction.values.forEach(dir => {
@@ -318,49 +397,70 @@ export namespace Levels {
             })
         }
 
-        public manageChunks(pos: BlockPos, range: number) {
-            let loadedPos: ChunkPos[] = [];
+        public manageChunks(pos: Vec.BlockPos) {
+            let chunkPos = Vec.ChunkPos.fromBlockPos(pos);
+            if (!this.lastSentPos || !this.lastSentPos.equals(chunkPos)) {
+                this.lastSentPos = chunkPos;
 
-            let chunkPos = ChunkPos.fromBlockPos(pos);
-            loadedPos.push(chunkPos);
-
-            // for (let i = -range; i <= range; i++) {
-            //     for (let j = -range; j <= range; j++) {
-            //         let nextChunkPos = chunkPos.relative(i, j);
-            //         loadedPos.push(nextChunkPos);
-            //     }
-            // }
-
-            for (let i = 0; i <= range; i++) { //start at center and move out layer by layer
-                for (let x = -i; x <= i; x++) { //get all chunks inside current layer
-                    for (let z = -i; z <= i; z++) {
-                        let nextPos = chunkPos.relative(x, z);
-                        loadedPos.push(nextPos);
-                    }
-                }
+                this.updateWorker();
             }
 
-            this.generateInRange(loadedPos, pos, range);
+            // let loadedPos: Vec.ChunkPos[] = [];
+            //
+            // let chunkPos = Vec.ChunkPos.fromBlockPos(pos);
+            // loadedPos.push(chunkPos);
+            //
+            // for (let i = 0; i <= this.renderDistance; i++) { //start at center and move out layer by layer
+            //     for (let x = -i; x <= i; x++) { //get all chunks inside current layer
+            //         for (let z = -i; z <= i; z++) {
+            //             let nextPos = chunkPos.relative(x, z);
+            //             loadedPos.push(nextPos);
+            //         }
+            //     }
+            // }
+            //
+            // this.generateInRange(loadedPos, pos, this.renderDistance);
+            //
+            // this.loadedChunks.forEach((chunk, serial) => {
+            //     let includes = false;
+            //     for (let pos of loadedPos) {
+            //         if (pos.equals(chunk.chunkPos)) {
+            //             includes = true;
+            //             break;
+            //         }
+            //     }
+            //     if (!includes) {
+            //         chunk.unload();
+            //     }
+            // })
+            //
+            // loadedPos.forEach(pos => {
+            //     this.chunks.get(pos.serialize()).load();
+            // })
+        }
 
-            this.loadedChunks.forEach((chunk, serial) => {
-                let includes = false;
-                for (let pos of loadedPos) {
-                    if (pos.equals(chunk.chunkPos)) {
-                        includes = true;
-                        break;
-                    }
-                }
-                if (!includes) {
-                    chunk.unload();
-                }
+        private updateWorker(){
+            let loadedChunks = [];
+            this.loadedChunks.forEach(chunk => {
+                loadedChunks.push({
+                    x: chunk.chunkPos.x,
+                    z: chunk.chunkPos.z
+                });
             })
 
-            loadedPos.forEach(pos => {
-                this.chunks.get(pos.serialize()).load();
+            this.worker.postMessage({
+                type: "update",
+                data: {
+                    pos: {
+                        x: this.lastSentPos.x,
+                        z: this.lastSentPos.z
+                    },
+                    loaded_chunks: loadedChunks
+                }
             })
         }
 
-        public generateInRange(loadedPos: ChunkPos[], pos: BlockPos, range: number) {
+        public generateInRange(loadedPos: Vec.ChunkPos[], pos: Vec.BlockPos, range: number) {
             loadedPos.forEach((pos) => {
                 let long = pos.serialize();
                 if (!this.chunks.has(long)) {

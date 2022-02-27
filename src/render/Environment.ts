@@ -1,39 +1,26 @@
 import {
     BackSide,
-    BoxBufferGeometry,
-    BoxGeometry, DirectionalLight, DirectionalLightHelper, MathUtils,
+    BoxGeometry,
+    DirectionalLight,
+    DirectionalLightHelper,
+    MathUtils,
     Mesh,
-    MeshBasicMaterial,
     Scene,
-    ShaderMaterial, SpotLight, SpotLightHelper,
-    UniformsUtils, Vector3, WebGLRenderer
+    ShaderMaterial,
+    UniformsUtils,
+    Vector3,
+    WebGLRenderer
 } from "three";
 import {Vec} from "../math/Vec";
 import {Textures} from "../block/Textures";
-import {Sky} from "three/examples/jsm/objects/Sky";
 import {MathUtilities} from "../math/MathUtilities";
 import {Levels} from "../world/Levels";
 
 export namespace Environment {
     import Vec3 = Vec.Vec3;
-    import MaterialHelper = Textures.MaterialHelper;
-    import ShaderHelper = Textures.ShaderHelper;
     import Level = Levels.Level;
 
     export class SkyBox {
-        private uniforms = {
-            turbidity: { value: 2 },
-            rayleigh: { value: 1 },
-            mieCoefficient: { value: 0.005 },
-            mieDirectionalG: { value: 0.8 },
-            sunPosition: {
-                value: new Vector3()
-            },
-            up: {
-                value: new Vector3(0, 1, 0)
-            }
-        }
-
         config = {
             turbidity: 10,
             rayleigh: 3,
@@ -43,14 +30,25 @@ export namespace Environment {
             azimuth: 120,
             exposure: 0
         }
-
+        light: DirectionalLight;
+        private uniforms = {
+            turbidity: {value: 2},
+            rayleigh: {value: 1},
+            mieCoefficient: {value: 0.005},
+            mieDirectionalG: {value: 0.8},
+            sunPosition: {
+                value: new Vector3()
+            },
+            up: {
+                value: new Vector3(0, 1, 0)
+            }
+        }
         private readonly mesh: Mesh;
         private readonly level: Level;
-        private sun: Vector3 = new Vector3(0,1,0);
+        private sun: Vector3 = new Vector3(0, 1, 0);
         private readonly renderer: WebGLRenderer;
         private scalar: number = 4500;
         private radius: number;
-        light: DirectionalLight;
         private lightEnabled: boolean = true;
         private scene: Scene;
         private fullBrightMin: number = 75;
@@ -64,8 +62,8 @@ export namespace Environment {
             this.renderer = renderer;
             this.config.exposure = this.renderer.toneMappingExposure;
 
-            const vertexShader = ShaderHelper.load("environment/sky_vertex");
-            const fragmentShader = ShaderHelper.load("environment/sky_fragment");
+            const vertexShader = Textures.ShaderHelper.load("environment/sky_vertex");
+            const fragmentShader = Textures.ShaderHelper.load("environment/sky_fragment");
 
             const material = new ShaderMaterial({
                 name: 'SkyShader',
@@ -81,8 +79,8 @@ export namespace Environment {
 
             scene.add(this.mesh);
 
-            this.light = new DirectionalLight(0xffa95c,this.maxIntensity);
-            this.light.position.set(0,1,0);
+            this.light = new DirectionalLight(0xffa95c, this.maxIntensity);
+            this.light.position.set(0, 1, 0);
             this.light.castShadow = true;
             //this.light.shadow.bias = -0.0001;
             this.light.shadow.mapSize.width = 512 * 8;
@@ -119,63 +117,63 @@ export namespace Environment {
 
             this.renderer.toneMappingExposure = this.config.exposure;
 
-            this.light.position.setFromSphericalCoords(this.radius,phi,theta);
+            this.light.position.setFromSphericalCoords(this.radius, phi, theta);
 
             let deg = this.config.elevation;
-            if(deg >= this.fullBrightMin){
-                if(deg < 90) {
-                    let intensity = Math.abs(this.maxIntensity - MathUtilities.Utils.scaleBetween(deg, 0,this.maxIntensity,this.fullBrightMin, 90));
+            if (deg >= this.fullBrightMin) {
+                if (deg < 90) {
+                    let intensity = Math.abs(this.maxIntensity - MathUtilities.Utils.scaleBetween(deg, 0, this.maxIntensity, this.fullBrightMin, 90));
                     this.light.intensity = intensity;
-                } else{
-                    if(deg <= this.fullBrightMax) {
+                } else {
+                    if (deg <= this.fullBrightMax) {
                         if (deg > 270) {
                             let intensity = MathUtilities.Utils.scaleBetween(deg, 0, this.maxIntensity, 270, this.fullBrightMax);
                             this.light.intensity = intensity;
                         } else {
                             this.light.intensity = 0
                         }
-                    }else{
+                    } else {
                         this.light.intensity = this.maxIntensity;
                     }
                 }
-            } else{
+            } else {
                 this.light.intensity = this.maxIntensity;
             }
         }
 
-        public setSkyPos(deg: number){
+        public setSkyPos(deg: number) {
             this.config.elevation = deg % 360;
-            if(this.config.elevation < 0){
+            if (this.config.elevation < 0) {
                 this.config.elevation += 360;
             }
             this.update()
         }
 
-        public updatePos(vec: Vec3){
+        public updatePos(vec: Vec3) {
             this.mesh.position.x = vec.x;
             this.mesh.position.z = vec.z;
 
             const phi = MathUtils.degToRad(this.config.elevation);
             const theta = MathUtils.degToRad(this.config.azimuth);
-            this.light.position.setFromSphericalCoords(this.radius,phi,theta);
-            this.light.position.add(new Vector3(vec.x,Levels.Chunk.CHUNK_DEPTH,vec.z));
+            this.light.position.setFromSphericalCoords(this.radius, phi, theta);
+            this.light.position.add(new Vector3(vec.x, Levels.Chunk.CHUNK_DEPTH, vec.z));
             this.light.target.position.x = vec.x;
             this.light.target.position.z = vec.z;
             this.light.target.updateMatrixWorld();
         }
 
-        public applyLights(enabled?: boolean){
-            if(enabled && enabled == this.lightEnabled){
+        public applyLights(enabled?: boolean) {
+            if (enabled && enabled == this.lightEnabled) {
                 return
             }
 
-            if(!enabled){
+            if (!enabled) {
                 enabled = !this.lightEnabled;
             }
 
-            if(enabled){
+            if (enabled) {
                 this.scene.add(this.light);
-            }else{
+            } else {
                 this.light.removeFromParent();
             }
 

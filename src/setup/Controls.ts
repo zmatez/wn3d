@@ -1,19 +1,14 @@
 import * as THREE from "three";
+import {BoxGeometry} from "three";
 import {Levels} from "../world/Levels";
 import {Vec} from "../math/Vec";
 import {Directions} from "../math/Directions";
 import {Blocks} from "../block/Blocks";
-import {Matrix4} from "three";
 import {App} from "./main";
 //import {PointerLockControls} from 'three/examples/jsm/controls/PointerLockControls';
 
 export namespace Controls {
     import Level = Levels.Level;
-    import Vec3 = Vec.Vec3;
-    import BlockPos = Vec.BlockPos;
-    import RelativeDirection = Directions.RelativeDirection;
-    import AABB = Vec.AABB;
-    import Axis = Directions.Axis;
     import Direction = Directions.Direction;
     import BlockState = Blocks.BlockState;
 
@@ -24,10 +19,6 @@ export namespace Controls {
         public readonly level: Level;
         public raycaster: THREE.Raycaster;
         public centerPoint: THREE.Vector2 = new THREE.Vector2();
-        private pressedSpace: boolean = false;
-        private unpressedSpace: boolean = false;
-        private sprinting: boolean = false;
-
         public movement: {
             forward: number,
             backward: number,
@@ -43,13 +34,11 @@ export namespace Controls {
             up: 0,
             down: 0
         }
-
         public readonly fovNormal = 75;
         public readonly fovSprint = 85;
         public readonly fovChange = 1.2;
         public fov: number;
         public desiredFov: number;
-
         public friction: number = 0.006;
         public flyingFriction: number = 0.0035;
         public movingSpeed: number = 0.1;
@@ -60,20 +49,19 @@ export namespace Controls {
         public jumpForce: number = 0.13;
         public flyForce: number = 0.13;
         public rayRange: number = 5;
-
         public height: number = 1.45;
         public cameraOffset: number = 1 / 3;
         public eyePos: number = 1.25;
         public thickness: number = 0.8;
-
         public onGround: boolean = false;
         public flying: boolean = false;
-
+        public look: { block: BlockState, vec: Vec.Vec3 };
+        private pressedSpace: boolean = false;
+        private unpressedSpace: boolean = false;
+        private sprinting: boolean = false;
         private activeKeys: string[] = [];
-
-        private prevPos: Vec3;
-        public look: { block: BlockState, vec: Vec3 };
-        private oldLook: { block: BlockState, vec: Vec3 };
+        private prevPos: Vec.Vec3;
+        private oldLook: { block: BlockState, vec: Vec.Vec3 };
 
         private mesh: THREE.LineSegments;
         private hlGeometry: THREE.EdgesGeometry;
@@ -87,7 +75,7 @@ export namespace Controls {
             this.camera.position.y = Levels.Chunk.CHUNK_DEPTH;
             this.camera.rotation.order = 'YXZ';
             this.controls = new PointerLockControls(camera, document.body);
-            this.prevPos = new Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
+            this.prevPos = new Vec.Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
 
             this.raycaster = new THREE.Raycaster();
 
@@ -114,21 +102,62 @@ export namespace Controls {
             document.addEventListener('keydown', (e) => {
                 this.activeKeys.push(e.key);
                 this.sprinting = e.ctrlKey;
-                this.onKey(e.key,true);
+                this.onKey(e.key, true);
             });
             document.addEventListener('keyup', (e) => {
                 this.activeKeys = this.activeKeys.filter(key => key != e.key);
                 this.sprinting = e.ctrlKey;
-                this.onKey(e.key,false);
+                this.onKey(e.key, false);
             });
 
             this.centerPoint.x = ((window.innerWidth / 2) / window.innerWidth) * 2 - 1;
             this.centerPoint.y = -((window.innerHeight / 2) / window.innerHeight) * 2 + 1;
         }
 
+        public get onPos(): Vec.Vec3 {
+            return new Vec.Vec3(this.camera.position.x, this.camera.position.y - this.eyePos, this.camera.position.z);
+        }
+
+        public get onBlockPos(): Vec.BlockPos {
+            return Vec.BlockPos.of(this.onPos);
+        }
+
+        public get rotation(): { x: number, y: number } {
+            return {
+                x: THREE.MathUtils.radToDeg(this.camera.rotation.x),
+                y: THREE.MathUtils.radToDeg(this.camera.rotation.y),
+            }
+        }
+
+        public get lookDir(): Direction {
+            let rot = this.rotation;
+            let horiz = rot.y;
+            let vert = rot.x;
+            if (vert > 45) {
+                return Direction.UP
+            } else if (vert < -45) {
+                return Direction.DOWN;
+            }
+
+            if (horiz < 45 && horiz > -45) {
+                return Direction.NORTH;
+            } else if (horiz < -45 && horiz > -135) {
+                return Direction.EAST;
+            } else if (horiz > 45 && horiz < 135) {
+                return Direction.WEST;
+            } else {
+                return Direction.SOUTH;
+            }
+        }
+
+        public get aabb(): Vec.AABB {
+            let pos = this.onPos;
+            return new Vec.AABB(pos, pos.relative(this.thickness, this.height, this.thickness));
+        }
+
         public onKey(key: string, down: boolean) {
             if (key == " ") {
-                if(down) {
+                if (down) {
                     if (this.pressedSpace && this.unpressedSpace) {
                         this.flying = !this.flying;
                     } else {
@@ -138,24 +167,24 @@ export namespace Controls {
                         }, 250)
                     }
                     this.unpressedSpace = false;
-                }else{
+                } else {
                     this.unpressedSpace = true;
                 }
-            } else if(key == "l"){
-                if(down) {
+            } else if (key == "l") {
+                if (down) {
                     this.app.skyBox.applyLights();
                 }
-            }  else if(key == "k"){
-                if(down) {
+            } else if (key == "k") {
+                if (down) {
                     this.level.reloadChunks()
                 }
-            } else if(key == ","){
-                if(down) {
+            } else if (key == ",") {
+                if (down) {
                     this.app.sunPos += 1;
                     this.app.skyBox.setSkyPos(this.app.sunPos)
                 }
-            } else if(key == "."){
-                if(down) {
+            } else if (key == ".") {
+                if (down) {
                     this.app.sunPos -= 1;
                     this.app.skyBox.setSkyPos(this.app.sunPos)
                 }
@@ -163,6 +192,12 @@ export namespace Controls {
         }
 
         public update() {
+            //don't update if chunk is not loaded (don't fall in the void)
+            let chunk = Vec.ChunkPos.fromBlockPos(this.onBlockPos);
+            if (!this.level.loadedChunks.has(chunk.serialize())) {
+                return
+            }
+
             this.onGround = this.isOnGround();
             if (this.onGround) {
                 this.flying = false;
@@ -185,10 +220,10 @@ export namespace Controls {
             }
 
             let moved = this.move();
-            if(moved){
-                if(this.sprinting){
+            if (moved) {
+                if (this.sprinting) {
                     this.setFOV(this.fovSprint);
-                }else{
+                } else {
                     this.setFOV(this.fovNormal);
                 }
             }
@@ -226,10 +261,10 @@ export namespace Controls {
 
             //this.findLookPos();
             //-----
-            this.prevPos = new Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
+            this.prevPos = new Vec.Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
         }
 
-        public tick(){
+        public tick() {
             //this.findLookPos();
         }
 
@@ -251,7 +286,7 @@ export namespace Controls {
                     if (this.hlMesh != null) {
                         this.hlMesh.removeFromParent();
                     }
-                    this.hlGeometry = new THREE.EdgesGeometry(this.look.block.block.geometry);
+                    this.hlGeometry = new THREE.EdgesGeometry(new BoxGeometry(1, 1, 1));
                     this.hlMesh = new THREE.LineSegments(this.hlGeometry, this.hlMaterial);
 
                     let diff = Blocks.Block.BLOCK_SIZE / 2;
@@ -296,13 +331,13 @@ export namespace Controls {
             this.movement.up = 0;
         }
 
-        public setFOV(fov: number){
+        public setFOV(fov: number) {
             this.desiredFov = fov;
         }
 
-        public updateFOV(){
-            if(this.desiredFov != this.fov){
-                if(this.desiredFov > this.fov){
+        public updateFOV() {
+            if (this.desiredFov != this.fov) {
+                if (this.desiredFov > this.fov) {
                     this.fov = Math.min(this.desiredFov, this.fov + this.fovChange);
                 } else {
                     this.fov = Math.max(this.desiredFov, this.fov - this.fovChange);
@@ -314,82 +349,41 @@ export namespace Controls {
             }
         }
 
-        public move(): boolean{
+        public move(): boolean {
             let moved = false;
             let friction = this.flying ? this.flyingFriction : this.friction;
 
-            if(this.movement.forward != 0) {
+            if (this.movement.forward != 0) {
                 this.controls.moveForward(this.movement.forward);
-                this.movement.forward = Math.max(0,this.movement.forward - friction);
+                this.movement.forward = Math.max(0, this.movement.forward - friction);
                 moved = true;
             }
-            if(this.movement.backward != 0) {
+            if (this.movement.backward != 0) {
                 this.controls.moveForward(-this.movement.backward);
-                this.movement.backward = Math.max(0,this.movement.backward - friction);
+                this.movement.backward = Math.max(0, this.movement.backward - friction);
                 moved = true;
             }
-            if(this.movement.right != 0) {
+            if (this.movement.right != 0) {
                 this.controls.moveRight(this.movement.right);
-                this.movement.right = Math.max(0,this.movement.right - friction);
+                this.movement.right = Math.max(0, this.movement.right - friction);
                 moved = true;
             }
-            if(this.movement.left != 0) {
+            if (this.movement.left != 0) {
                 this.controls.moveRight(-this.movement.left);
-                this.movement.left = Math.max(0,this.movement.left - friction);
+                this.movement.left = Math.max(0, this.movement.left - friction);
                 moved = true;
             }
 
-            if(this.movement.up != 0) {
+            if (this.movement.up != 0) {
                 this.camera.position.y += this.movement.up
-                this.movement.up = Math.max(0,this.movement.up - friction);
+                this.movement.up = Math.max(0, this.movement.up - friction);
             }
-            if(this.movement.down != 0) {
+            if (this.movement.down != 0) {
                 this.camera.position.y += -this.movement.down
-                this.movement.down = Math.max(0,this.movement.down - friction);
+                this.movement.down = Math.max(0, this.movement.down - friction);
             }
 
             return moved;
-        }
-
-        public get onPos(): Vec3 {
-            return new Vec3(this.camera.position.x, this.camera.position.y - this.eyePos, this.camera.position.z);
-        }
-
-        public get onBlockPos(): BlockPos {
-            return BlockPos.of(this.onPos);
-        }
-
-        public get rotation(): { x: number, y: number } {
-            return {
-                x: THREE.MathUtils.radToDeg(this.camera.rotation.x),
-                y: THREE.MathUtils.radToDeg(this.camera.rotation.y),
-            }
-        }
-
-        public get lookDir(): Direction {
-            let rot = this.rotation;
-            let horiz = rot.y;
-            let vert = rot.x;
-            if (vert > 45) {
-                return Direction.UP
-            } else if (vert < -45) {
-                return Direction.DOWN;
-            }
-
-            if (horiz < 45 && horiz > -45) {
-                return Direction.NORTH;
-            } else if (horiz < -45 && horiz > -135) {
-                return Direction.EAST;
-            } else if (horiz > 45 && horiz < 135) {
-                return Direction.WEST;
-            } else {
-                return Direction.SOUTH;
-            }
-        }
-
-        public get aabb(): AABB {
-            let pos = this.onPos;
-            return new AABB(pos, pos.relative(this.thickness, this.height, this.thickness));
         }
 
         public checkCollisions() {
@@ -435,28 +429,28 @@ export namespace Controls {
             let minDistance = null;
             let minPosition: THREE.Vector3 = null;
             Blocks.Block.BLOCKS.forEach((block) => {
-                block.meshes.forEach(iMesh => {
-                    let mesh = iMesh.mesh;
-                    let intersection = this.raycaster.intersectObject(mesh);
-                    if (intersection.length > 0) {
-                        let position = intersection[0].point;
-                        let distance = intersection[0].distance;
-
-                        if (distance <= this.rayRange) {
-                            if (minDistance == null || minDistance > distance) {
-                                minDistance = distance;
-                                minPosition = position;
-                            }
-                        }
-                    }
-                })
+                // block.meshes.forEach(iMesh => {
+                //     let mesh = iMesh.mesh;
+                //     let intersection = this.raycaster.intersectObject(mesh);
+                //     if (intersection.length > 0) {
+                //         let position = intersection[0].point;
+                //         let distance = intersection[0].distance;
+                //
+                //         if (distance <= this.rayRange) {
+                //             if (minDistance == null || minDistance > distance) {
+                //                 minDistance = distance;
+                //                 minPosition = position;
+                //             }
+                //         }
+                //     }
+                // })
             })
 
             if (!minDistance) {
                 this.look = null;
             } else {
-                let vec = new Vec3(minPosition.x, minPosition.y, minPosition.z);
-                let pos = BlockPos.of(vec);
+                let vec = new Vec.Vec3(minPosition.x, minPosition.y, minPosition.z);
+                let pos = Vec.BlockPos.of(vec);
                 let block = this.level.getBlock(pos);
                 if (block.block != Blocks.AIR) {
                     this.look = {block: block, vec: vec};

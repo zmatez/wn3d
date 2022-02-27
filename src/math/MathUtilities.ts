@@ -1,5 +1,5 @@
-export namespace MathUtilities{
-    export class Utils{
+export namespace MathUtilities {
+    export class Utils {
         public static removeFromArray(array: any[], item: any): void {
             const index = array.indexOf(item);
             if (index > -1) {
