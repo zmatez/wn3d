@@ -141,12 +141,6 @@ export namespace Blocks {
             }
         }
 
-        public stringFaces(): string {
-            let s = "";
-            this.faces.forEach((face, dir) => s += dir.name.charAt(0) + ": " + face + " | ");
-            return s;
-        }
-
         public load(scene: THREE.Scene) {
         }
 

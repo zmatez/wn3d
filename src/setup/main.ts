@@ -21,7 +21,8 @@ export class App {
     public player: Player;
     public working: boolean = true;
     public gui: GUI;
-    public readonly renderDistance: number = 8;
+    public readonly simulationDistance: number;
+    public readonly renderDistance: number;
     public fpsStats: Stats;
     public ticksPerSecond: number = 5;
     public lastTick: Date;
@@ -32,8 +33,10 @@ export class App {
     //private clockDelta = 0;
     //private desiredFPS = 1 / 144;
 
-    constructor() {
+    constructor(simulationDistance: number, renderDistance: number) {
         App.instance = this;
+        this.simulationDistance = simulationDistance;
+        this.renderDistance = renderDistance;
     }
 
     load() {
@@ -41,17 +44,21 @@ export class App {
 
         this.gui = new GUI();
         this.gui.create();
-        this.setLoadingProgress(0);
+        this.setTextureLoadingProgress(0);
 
         setTimeout(() => {
             Textures.load((prg) => {
-                this.setLoadingProgress(prg);
+                this.setTextureLoadingProgress(prg);
             });
         }, 100);
     }
 
-    setLoadingProgress(percentage) {
-        this.gui.setLoadingProgress(percentage, () => this.setup());
+    setTextureLoadingProgress(percentage) {
+        this.gui.setLoadingProgress(percentage, false,"Loading textures",() => this.setup());
+    }
+
+    setWorldLoadingProgress(percentage,callback: () => void) {
+        this.gui.setLoadingProgress(percentage, true,"Generating terrain",() => callback());
     }
 
     setup() {
@@ -114,7 +121,7 @@ export class App {
 
         //Blocks.Block.BLOCKS.forEach(block => block.prepare(this.scene));
 
-        this.level = new Levels.Level(this.scene, this.renderDistance);
+        this.level = new Levels.Level(this,this.scene, this.simulationDistance, this.renderDistance);
 
         this.skyBox = new Skybox(this.renderer, this.scene, this.level, this.renderDistance, Levels.Chunk.CHUNK_SIZE);
         this.skyBox.setSkyPos(this.sunPos);
@@ -138,7 +145,9 @@ export class App {
             try {
                 this.fpsStats.begin();
                 this.update();
-                this.render();
+                if(this.level && this.level.rendering) {
+                    this.render();
+                }
                 this.fpsStats.end();
             } catch (e) {
                 console.error("Error occurred, application stopped working.")
@@ -149,13 +158,16 @@ export class App {
     }
 
     private update() {
+        let rendering = this.level && this.level.rendering;
         // @ts-ignore
         if (this.lastTick == null || (new Date() - this.lastTick) >= (1000 / this.ticksPerSecond)) {
             this.tick();
             this.lastTick = new Date();
         }
-        this.player.update();
-        this.skyBox.updatePos(this.player.onPos);
+        if(rendering) {
+            this.player.update();
+            this.skyBox.updatePos(this.player.onPos);
+        }
     }
 
     private tick() {

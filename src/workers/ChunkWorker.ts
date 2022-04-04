@@ -6,6 +6,7 @@ class ChunkWorker {
     public static instance: ChunkWorker;
 
     public events: Map<string, (data: any) => void> = new Map<string, (data: any) => void>();
+    public simulationDistance: number = null;
     public renderDistance: number = null;
     public loader: ChunkLoader;
 
@@ -26,10 +27,9 @@ class ChunkWorker {
         })
         //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-        this.receive("render_distance", (data) => {
-            if (typeof data == "number") {
-                this.renderDistance = data;
-            }
+        this.receive("distances", (data) => {
+            this.simulationDistance = data['simulation_distance'];
+            this.renderDistance = data['render_distance'];
         });
         this.receive("update", (data) => {
             let pos = new Vec.ChunkPos(data['pos']['x'], data['pos']['z']);
@@ -40,6 +40,10 @@ class ChunkWorker {
 
             this.loader.update(pos, loadedChunks);
         });
+        this.receive("start_render", () => {
+            this.loader.onlyGen = false;
+            this.loader.toLoad = [];
+        })
 
         //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         this.post("ready", null);
@@ -60,10 +64,13 @@ class ChunkWorker {
 class ChunkLoader {
     public worker: ChunkWorker;
     public position: Vec.ChunkPos;
-    public toLoad: Vec.ChunkPos[] = [];
+    public toLoad: {pos: Vec.ChunkPos, render: boolean}[] = [];
     public queueTime: number;
     public executor: TimerHandler;
     public generatedChunks: Vec.ChunkPos[] = [];
+
+    public onlyGen: boolean = true;
+    public sendStatusChunks: boolean = false;
 
     constructor(worker: ChunkWorker, queueTime: number) {
         this.worker = worker;
@@ -81,29 +88,31 @@ class ChunkLoader {
             this.toLoad.splice(0, 1);
             let generated = false;
             for (let generatedChunk of this.generatedChunks) {
-                if (generatedChunk.x == next.x && generatedChunk.z == next.z) {
+                if (generatedChunk.x == next.pos.x && generatedChunk.z == next.pos.z) {
                     generated = true;
                     break;
                 }
             }
 
             if (!generated) {
-                this.generatedChunks.push(next);
+                this.generatedChunks.push(next.pos);
 
-                let blockChunk = new BlockChunk(next);
+                let blockChunk = new BlockChunk(next.pos);
                 blockChunk.generate();
 
                 this.worker.post("generate", {
-                    x: next.x,
-                    z: next.z,
+                    x: next.pos.x,
+                    z: next.pos.z,
                     chunk: blockChunk.serialize()
                 });
             }
 
-            this.worker.post("load", {
-                x: next.x,
-                z: next.z
-            });
+            if(next.render) {
+                this.worker.post("load", {
+                    x: next.pos.x,
+                    z: next.pos.z
+                });
+            }
         }
     }
 
@@ -111,15 +120,19 @@ class ChunkLoader {
         this.toLoad = [];
         this.position = chunkPos;
 
-        let inRangePos: Vec.ChunkPos[] = [];
+        let inRangePos: {pos: Vec.ChunkPos, render: boolean}[] = [];
 
-        inRangePos.push(chunkPos);
+        //inRangePos.push({pos: chunkPos, render: !this.onlyGen});
 
-        for (let i = 0; i <= this.worker.renderDistance; i++) { //start at center and move out layer by layer
+        for (let i = 0; i <= this.worker.simulationDistance; i++) { //start at center and move out layer by layer
             for (let x = -i; x <= i; x++) { //get all chunks inside current layer
                 for (let z = -i; z <= i; z++) {
+                    let toRender = i <= this.worker.renderDistance;
+                    if(this.onlyGen){
+                        toRender = false;
+                    }
                     let nextPos = chunkPos.relative(x, z);
-                    inRangePos.push(nextPos);
+                    inRangePos.push({pos: nextPos, render: toRender});
                 }
             }
         }
@@ -127,7 +140,7 @@ class ChunkLoader {
         loadedChunks.forEach(chunkPos => {
             let includes = false;
             for (let pos of inRangePos) {
-                if (pos.equals(chunkPos)) {
+                if (pos.pos.equals(chunkPos)) {
                     includes = true;
                     break;
                 }
@@ -141,22 +154,30 @@ class ChunkLoader {
         inRangePos.forEach(pos => {
             let includes = false;
             for (let chunkPos of loadedChunks) {
-                if (pos.equals(chunkPos)) {
+                if (pos.pos.equals(chunkPos)) {
                     includes = true;
                     break;
                 }
             }
             // chunk is not loaded but is in range
             if (!includes) {
-                this.load(pos);
+                this.load(pos.pos,pos.render);
             }
         })
+
+        if(!this.sendStatusChunks){
+            this.sendStatusChunks = true;
+            this.worker.post("to_simulate",this.toLoad.length);
+        }
     }
 
-    private load(pos: Vec.ChunkPos) {
+    private load(pos: Vec.ChunkPos, render: boolean) {
         let qIndex = this.isInQueue(pos);
         if (qIndex == -1) {
-            this.toLoad.push(pos);
+            this.toLoad.push({
+                pos: pos,
+                render: render
+            });
         }
     }
 
@@ -175,7 +196,7 @@ class ChunkLoader {
     private isInQueue(pos: Vec.ChunkPos): number {
         for (let i = 0; i < this.toLoad.length; i++) {
             let chunkPos = this.toLoad[i];
-            if (chunkPos.x == pos.x && chunkPos.z == pos.z) {
+            if (chunkPos.pos.x == pos.x && chunkPos.pos.z == pos.z) {
                 return i;
             }
         }

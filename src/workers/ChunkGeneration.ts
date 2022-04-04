@@ -3,10 +3,16 @@ import SimplexNoise from "simplex-noise";
 import {Vec} from "../math/Vec";
 import {Levels} from "../world/Levels";
 import {Directions} from "../math/Directions";
+import {MathUtilities} from "../math/MathUtilities";
 
 
 const noise = new SimplexNoise();
-const noiseFreq = 50;
+const minNoiseFreq = 50;
+const maxNoiseFreq = 150;
+const mountainNoise = new SimplexNoise();
+const mountainFreq = 400;
+const terrainNoise = new SimplexNoise();
+const terrainFreq = 200;
 
 export namespace ChunkGeneration {
     import BlockState = Blocks.BlockState;
@@ -34,7 +40,6 @@ export namespace ChunkGeneration {
         public static deserialize(data: { chunk_pos: { x: number, z: number }, blocks: [][][] }, level: Levels.Level, callback: (chunk: Levels.Chunk) => void): void {
             let chunk = level.createChunk(new Vec.ChunkPos(data.chunk_pos.x, data.chunk_pos.z));
             let blocks: BlockState[][][] = [];
-            let max = 150;
 
             data.blocks.forEach((blocksYZ, x) => {
                 blocksYZ.forEach((blocksZ, y) => {
@@ -62,31 +67,6 @@ export namespace ChunkGeneration {
                     })
                 })
             })
-
-            // for (let i = 0; i < data.blocks.length; i++) {
-            //     setTimeout(() => {
-            //         let block = data.blocks[i];
-            //
-            //         let state = BlockState.deserialize(block);
-            //         state.setupLevel(level, chunk, chunk.renderer);
-            //         let planes = 0;
-            //         state.faces.forEach(value => {
-            //             if (value) {
-            //                 planes++;
-            //             }
-            //         });
-            //         chunk.renderer.planes += planes;
-            //         state.updateMesh();
-            //         blocks.set(state.pos.serialize(), state);
-            //
-            //     }, (i / data.blocks.length) * max);
-            // }
-            //
-            // setTimeout(() => {
-            //     chunk.blocks = blocks;
-            //     callback(chunk);
-            // }, max + 1);
-
 
             chunk.blocks = blocks;
             callback(chunk);
@@ -149,8 +129,11 @@ export namespace ChunkGeneration {
             let size = Levels.Chunk.CHUNK_SIZE;
             for (let x = this.chunkPos.x * size; x < this.chunkPos.x * size + size; x++) {
                 for (let z = this.chunkPos.z * size; z < this.chunkPos.z * size + size; z++) {
+                    let mountain = MathUtilities.Utils.scaleBetween(mountainNoise.noise2D(x/mountainFreq,z/mountainFreq),minNoiseFreq,maxNoiseFreq,-1,1);
+                    let terrain = MathUtilities.Utils.scaleBetween(terrainNoise.noise2D(x/terrainFreq,z/terrainFreq),Levels.Chunk.CHUNK_DEPTH * 0.1,Levels.Chunk.CHUNK_DEPTH * 0.7,-1,1);
+
                     let n = Math.max(1,
-                        (noise.noise2D(x / noiseFreq, z / noiseFreq) + 1) * (Levels.Chunk.CHUNK_DEPTH / 2)
+                        (noise.noise2D(x / mountain, z / mountain) + 1) * (terrain)
                     )
 
                     let ny = Math.min(Math.round(n), Levels.Chunk.CHUNK_DEPTH);

@@ -19,6 +19,7 @@ import {Levels} from "../world/Levels";
 export namespace Environment {
     import Vec3 = Vec.Vec3;
     import Level = Levels.Level;
+    import Chunk = Levels.Chunk;
 
     export class SkyBox {
         config = {
@@ -86,8 +87,8 @@ export namespace Environment {
             this.light.shadow.mapSize.width = 512 * 8;
             this.light.shadow.mapSize.height = 512 * 8;
 
-            let d = 32;
-            let db = 64;
+            let d = renderDistance * Chunk.CHUNK_SIZE;
+            let db = Chunk.CHUNK_DEPTH;
 
             this.light.shadow.camera.left = -d;
             this.light.shadow.camera.right = d;
