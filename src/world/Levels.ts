@@ -284,7 +284,7 @@ export namespace Levels {
             this.simulationDistance = simulationDistance;
             this.renderDistance = renderDistance;
 
-            this.worker = new Worker("dist/bundle_worker.js");
+            this.worker = new Worker("dist/worker.js");
             this.worker.addEventListener("message", (msg) => {
                 let type: string = msg.data['type'];
                 let data: any = msg.data['data'];
